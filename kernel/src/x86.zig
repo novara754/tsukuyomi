@@ -16,3 +16,9 @@ pub fn inb(port: u16) u8 {
 pub fn pause() void {
     asm volatile ("pause");
 }
+
+pub fn spin() noreturn {
+    while (true) {
+        asm volatile ("pause");
+    }
+}

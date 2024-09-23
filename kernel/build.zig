@@ -26,7 +26,7 @@ pub fn build(b: *std.Build) void {
 
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .Debug });
 
-    const exe = b.addExecutable(.{
+    const kernel = b.addExecutable(.{
         .name = "tsukuyomi",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -34,12 +34,13 @@ pub fn build(b: *std.Build) void {
         .code_model = .kernel,
         .link_libc = false,
     });
-    exe.setLinkerScript(.{ .src_path = .{ .owner = b, .sub_path = "kernel.ld" } });
+    kernel.setLinkerScript(.{ .src_path = .{ .owner = b, .sub_path = "kernel.ld" } });
+    kernel.addAssemblyFile(.{ .src_path = .{ .owner = b, .sub_path = "src/load_gdt.s" } });
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
-    b.installArtifact(exe);
+    b.installArtifact(kernel);
 
     const exe_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),
