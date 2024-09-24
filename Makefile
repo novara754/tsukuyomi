@@ -28,9 +28,12 @@ install-kernel: $(KERNEL) hdd.img
 kernel: $(KERNEL)
 
 .PHONY: $(KERNEL)
-$(KERNEL):
+$(KERNEL): kernel/src/interrupts/traps.s
 	cd kernel && zig build
 	objdump -d -M intel $(KERNEL) > $(KERNEL).asm
+
+kernel/src/interrupts/traps.s: gen_traps.py
+	python gen_traps.py >> $@
 
 hdd.img: ./mkfs.sh limine.conf
 	./mkfs.sh

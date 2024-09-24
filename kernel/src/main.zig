@@ -5,6 +5,7 @@ const limine = @import("limine.zig");
 const spin = @import("x86.zig").spin;
 const ppanic = @import("panic.zig").panic;
 const gdt = @import("gdt.zig");
+const idt = @import("interrupts/idt.zig");
 const mem = @import("mem.zig");
 
 export fn _start() noreturn {
@@ -32,6 +33,11 @@ export fn _start() noreturn {
 
     gdt.loadKernelGDT();
     uart.print("kernel gdt initialized\n", .{});
+
+    idt.init();
+    uart.print("kernel idt initialized\n", .{});
+
+    asm volatile ("int $0x40");
 
     uart.print("spinning...\n", .{});
     spin();
