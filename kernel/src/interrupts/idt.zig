@@ -1,5 +1,5 @@
 const gdt = @import("../gdt.zig");
-
+const irq = @import("irq.zig");
 const PRESENT: u8 = 1 << 7;
 
 const DPL_KERNEL: u8 = 0;
@@ -93,5 +93,12 @@ const TrapFrame = extern struct {
 };
 
 export fn handle_trap_inner(tf: *TrapFrame) callconv(.SysV) void {
-    @import("../panic.zig").panic("trap #{}", .{tf.trap_nr});
+    const panic = @import("../panic.zig").panic;
+    switch (tf.trap_nr) {
+        (irq.OFFSET + irq.TIMER) => {
+            @import("lapic.zig").eoi();
+            @import("../uart.zig").print("timer\n", .{});
+        },
+        else => panic("trap #{}", .{tf.trap_nr}),
+    }
 }

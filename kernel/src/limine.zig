@@ -79,3 +79,16 @@ const MemoryMapRequest = extern struct {
 };
 
 pub export var MEMORY_MAP linksection(".requests") = MemoryMapRequest{};
+
+const RSDPResponse = extern struct {
+    revision: u64,
+    rsdp_addr: u64,
+};
+
+const RSDPRequest = extern struct {
+    id: [4]u64 = request_id(0xc5e77b6b397e7b43, 0x27637845accdcf3c),
+    revision: u64 = 0,
+    response: ?*RSDPResponse = null,
+};
+
+pub export var RSDP linksection(".requests") = RSDPRequest{};

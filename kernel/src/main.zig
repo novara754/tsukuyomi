@@ -5,8 +5,11 @@ const limine = @import("limine.zig");
 const spin = @import("x86.zig").spin;
 const ppanic = @import("panic.zig").panic;
 const gdt = @import("gdt.zig");
-const idt = @import("interrupts/idt.zig");
 const mem = @import("mem.zig");
+const acpi = @import("acpi.zig");
+const idt = @import("interrupts/idt.zig");
+const ioapic = @import("interrupts/ioapic.zig");
+const lapic = @import("interrupts/lapic.zig");
 
 export fn _start() noreturn {
     uart.init() catch {
@@ -27,6 +30,10 @@ export fn _start() noreturn {
         ppanic("limine memory map response is null", .{});
     };
 
+    const rsdp = limine.RSDP.response orelse {
+        ppanic("limine rsdp response is null", .{});
+    };
+
     mem.init(@intCast(hhdm_response.*.offset), memory_map);
     const free_pages = mem.PAGE_ALLOCATOR.count_free();
     uart.print("number of usable physical pages: {} ({} bytes)\n", .{ free_pages, free_pages * mem.PAGE_SIZE });
@@ -35,10 +42,21 @@ export fn _start() noreturn {
     uart.print("kernel gdt initialized\n", .{});
 
     idt.init();
-    uart.print("kernel idt initialized\n", .{});
+    uart.print("idt initialized\n", .{});
 
-    asm volatile ("int $0x40");
+    const acpi_data = acpi.init(rsdp.rsdp_addr) catch |e| {
+        ppanic("failed to parse acpi tables: {}", .{e});
+    };
+    uart.print("acpi_data = {}\n", .{acpi_data});
 
+    ioapic.init(acpi_data.madt.ioapic_base);
+    uart.print("ioapic initialized\n", .{});
+
+    lapic.init(acpi_data.madt.lapic_base);
+    uart.print("lapic initialized\n", .{});
+    uart.print("lapic id: {}\n", .{lapic.id()});
+
+    asm volatile ("sti");
     uart.print("spinning...\n", .{});
     spin();
 }
