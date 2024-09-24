@@ -47,4 +47,35 @@ const HHDMRequest = extern struct {
     response: ?*HHDMResponse = null,
 };
 
-pub export var HHDM = HHDMRequest{};
+pub export var HHDM linksection(".requests") = HHDMRequest{};
+
+pub const MemoryMapEntryType = enum(u64) {
+    usable = 0,
+    reserved = 1,
+    acpi_reclaimable = 2,
+    acpi_nvs = 3,
+    bad_memory = 4,
+    bootloader_reclaimable = 5,
+    kernel_and_modules = 6,
+    framebuffer = 7,
+};
+
+const MemoryMapEntry = struct {
+    base: u64,
+    length: u64,
+    ty: MemoryMapEntryType,
+};
+
+pub const MemoryMapResponse = extern struct {
+    revision: u64,
+    entry_count: u64,
+    entries: [*]*const MemoryMapEntry,
+};
+
+const MemoryMapRequest = extern struct {
+    id: [4]u64 = request_id(0x67cf3d9d378a806f, 0xe304acdfc50c3c62),
+    revision: u64 = 0,
+    response: ?*MemoryMapResponse = null,
+};
+
+pub export var MEMORY_MAP linksection(".requests") = MemoryMapRequest{};
