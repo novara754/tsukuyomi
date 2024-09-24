@@ -4,11 +4,13 @@ NUM_CPUS ?= 1
 
 QEMU = qemu-system-x86_64
 QEMU_ARGS = \
-        -smp $(NUM_CPUS) \
-        -drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
-        -drive if=pflash,format=raw,readonly=on,file=$(OVMF_VARS) \
-        -drive format=raw,file=hdd.img \
-        -serial stdio
+    -smp $(NUM_CPUS) \
+    -drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
+    -drive if=pflash,format=raw,readonly=on,file=$(OVMF_VARS) \
+    -drive format=raw,file=hdd.img \
+    -no-reboot \
+    -nographic \
+    -serial mon:stdio
 QEMU_EXTRA ?=
 
 .PHONY: all
