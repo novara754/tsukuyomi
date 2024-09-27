@@ -110,7 +110,6 @@ var LAPIC = Lapic{};
 ///
 /// `base_addr` must be the valid base address of the lapic memory IO region.
 pub fn init(base_ptr: [*]u32) void {
-    @import("../uart.zig").print("base_ptr = {*}\n", .{base_ptr});
     LAPIC.lock.acquire();
     LAPIC.base = base_ptr;
     LAPIC.lock.release();

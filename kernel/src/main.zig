@@ -10,6 +10,7 @@ const acpi = @import("acpi.zig");
 const idt = @import("interrupts/idt.zig");
 const ioapic = @import("interrupts/ioapic.zig");
 const lapic = @import("interrupts/lapic.zig");
+const process = @import("process.zig");
 
 export fn _start() noreturn {
     uart.init() catch {
@@ -54,13 +55,57 @@ export fn _start() noreturn {
 
     lapic.init(acpi_data.madt.lapic_base);
     uart.print("lapic initialized\n", .{});
-    uart.print("lapic id: {}\n", .{lapic.id()});
 
-    asm volatile ("sti");
-    uart.print("spinning...\n", .{});
-    spin();
+    procFromFunc(@intFromPtr(&proc1), @intFromPtr(&STACK1) + mem.PAGE_SIZE) catch |e| {
+        ppanic("failed to create proc1: {}", .{e});
+    };
+    procFromFunc(@intFromPtr(&proc2), @intFromPtr(&STACK2) + mem.PAGE_SIZE) catch |e| {
+        ppanic("failed to create proc2: {}", .{e});
+    };
+
+    process.scheduler();
+
+    // uart.print("spinning...\n", .{});
+    // spin();
 }
 
 pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
     ppanic("{s}", .{msg});
 }
+
+fn proc1() noreturn {
+    while (true) {
+        uart.print("A", .{});
+        for (0..1_00_000) |_| {
+            // std.mem.doNotOptimizeAway(i);
+        }
+    }
+}
+
+fn proc2() noreturn {
+    while (true) {
+        uart.print("B", .{});
+        for (0..1_00_000) |_| {
+            // std.mem.doNotOptimizeAway(i);
+        }
+    }
+}
+
+fn procFromFunc(f: u64, rsp: u64) !void {
+    const proc_ = process.allocProcess();
+    var proc = proc_ orelse {
+        return error.CouldNotAllocateProcess;
+    };
+    var tf = proc.trap_frame;
+    tf.cs = gdt.SEG_KERNEL_CODE << 3;
+    tf.ds = gdt.SEG_KERNEL_DATA << 3;
+    tf.es = tf.ds;
+    tf.ss = tf.ds;
+    tf.rflags = 0x200; // IF
+    tf.rsp = rsp;
+    tf.rip = f;
+    proc.state = process.ProcessState.runnable;
+}
+
+export var STACK1: [mem.PAGE_SIZE]u8 = undefined;
+export var STACK2: [mem.PAGE_SIZE]u8 = undefined;

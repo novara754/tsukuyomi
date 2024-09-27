@@ -1,5 +1,7 @@
 const gdt = @import("../gdt.zig");
 const irq = @import("irq.zig");
+const process = @import("../process.zig");
+
 const PRESENT: u8 = 1 << 7;
 
 const DPL_KERNEL: u8 = 0;
@@ -38,11 +40,12 @@ pub fn init() void {
     const trap_table = @extern(*const [256]u64, .{ .name = "trap_table" });
 
     for (trap_table, 0..) |vector, i| {
-        const gate_type =
-            if (i < 32)
-            GATE_TRAP
-        else
-            GATE_INT;
+        // const gate_type =
+        //     if (i < 32)
+        //     GATE_TRAP
+        // else
+        //     GATE_INT;
+        const gate_type = GATE_INT;
 
         // if (i == SYSCALL_VECTOR) {
         //     IDT[i].set(trap, SEG_KERNEL_CODE << 3, 0, DPL_USER | GATE_TRAP);
@@ -61,7 +64,7 @@ pub fn init() void {
     );
 }
 
-const TrapFrame = extern struct {
+pub const TrapFrame = extern struct {
     rax: u64,
     rbx: u64,
     rcx: u64,
@@ -97,7 +100,10 @@ export fn handle_trap_inner(tf: *TrapFrame) callconv(.SysV) void {
     switch (tf.trap_nr) {
         (irq.OFFSET + irq.TIMER) => {
             @import("lapic.zig").eoi();
-            @import("../uart.zig").print("timer\n", .{});
+
+            if (process.CPU_STATE.process) |_| {
+                process.yield();
+            }
         },
         else => panic("trap #{}", .{tf.trap_nr}),
     }

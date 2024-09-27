@@ -38,12 +38,12 @@ pub fn init(phys_mem_offset_: usize, memory_map: *const limine.MemoryMapResponse
 
 const PageAllocator = struct {
     lock: Spinlock = Spinlock{},
-    root_node: ?*Node = null,
+    root_node: ?*align(PAGE_SIZE) Node = null,
 
     const Self = @This();
 
     const Node = struct {
-        next: ?*Node,
+        next: ?*align(PAGE_SIZE) Node,
     };
 
     pub fn alloc(self: *Self) *align(PAGE_SIZE) anyopaque {
@@ -62,7 +62,7 @@ const PageAllocator = struct {
         self.lock.acquire();
         defer self.lock.release();
 
-        var node: *Node = @ptrCast(page);
+        var node: *align(PAGE_SIZE) Node = @ptrCast(page);
         node.next = self.root_node;
         self.root_node = node;
     }

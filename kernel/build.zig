@@ -38,6 +38,7 @@ pub fn build(b: *std.Build) void {
     kernel.addAssemblyFile(.{ .src_path = .{ .owner = b, .sub_path = "src/load_gdt.s" } });
     kernel.addAssemblyFile(.{ .src_path = .{ .owner = b, .sub_path = "src/interrupts/traps.s" } });
     kernel.addAssemblyFile(.{ .src_path = .{ .owner = b, .sub_path = "src/interrupts/handle_trap.s" } });
+    kernel.addAssemblyFile(.{ .src_path = .{ .owner = b, .sub_path = "src/switch_context.s" } });
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
