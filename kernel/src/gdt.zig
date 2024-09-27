@@ -52,20 +52,22 @@ pub fn loadKernelGDT() void {
 }
 
 pub fn loadGDTWithTSS(gdt: *[7]u64, tss: *const TSS) void {
-    std.mem.copyForwards(u64, gdt, GDT_TEMPLATE);
-
     const tss_base = @intFromPtr(tss);
     const tss_limit = @sizeOf(TSS);
-    gdt[5] = (((tss_base >> 24) & 0xFF) << 56) | (0x4 << 52) | (((tss_limit >> 16) & 0xF) << 48) | (0x89 << 40) | ((tss_base & 0xFF_FFFF) << 16) | (tss_limit & 0xFFFF);
-    gdt[6] = tss_base >> 32;
+    const tss_segment = [2]u64{
+        (((tss_base >> 24) & 0xFF) << 56) | (0x4 << 52) | (((tss_limit >> 16) & 0xF) << 48) | (0x89 << 40) | ((tss_base & 0xFF_FFFF) << 16) | (tss_limit & 0xFFFF),
+        tss_base >> 32,
+    };
+
+    gdt.* = GDT_TEMPLATE ++ tss_segment;
 
     const gdtp = GDTP{
-        .size = @intCast(@sizeOf(@TypeOf(GDT_KERNEL)) - 1),
-        .offset = @intFromPtr(&GDT_KERNEL),
+        .size = @intCast(gdt.len * @sizeOf(u64) - 1),
+        .offset = @intFromPtr(gdt),
     };
     loadGDT(&gdtp, SEG_KERNEL_CODE << 3, SEG_KERNEL_DATA << 3);
     asm volatile ("ltr %ax"
         :
-        : [seg_tss] "{ax}" (SEG_TSS),
+        : [seg_tss] "{ax}" (SEG_TSS << 3),
     );
 }

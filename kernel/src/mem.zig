@@ -2,6 +2,7 @@ const limine = @import("limine.zig");
 const uart = @import("uart.zig");
 const panic = @import("panic.zig").panic;
 const Spinlock = @import("Spinlock.zig");
+const x86 = @import("x86.zig");
 
 pub const PAGE_SIZE: usize = 4096;
 
@@ -22,6 +23,8 @@ pub fn v2p(ptr: *const anyopaque) usize {
     return @intFromPtr(ptr) - phys_mem_offset();
 }
 
+var KERNEL_PML4: *const PageTable = undefined;
+
 pub fn init(phys_mem_offset_: usize, memory_map: *const limine.MemoryMapResponse) void {
     @atomicStore(usize, &PHYS_MEM_OFFSET, phys_mem_offset_, .seq_cst);
 
@@ -35,6 +38,23 @@ pub fn init(phys_mem_offset_: usize, memory_map: *const limine.MemoryMapResponse
             PAGE_ALLOCATOR.free(@alignCast(p2v(page)));
         }
     }
+
+    KERNEL_PML4 = @alignCast(@ptrCast(p2v(x86.readCR3().page_table)));
+}
+
+pub fn createPML4() *PageTable {
+    const new_pml4: *PageTable = @ptrCast(PAGE_ALLOCATOR.alloc());
+    new_pml4.* = KERNEL_PML4.*;
+    return new_pml4;
+}
+
+pub fn setPML4(pml4_phys: u64) void {
+    const flags = x86.readCR3().flags;
+    x86.writeCR3(pml4_phys, flags);
+}
+
+pub fn restoreKernelPML4() void {
+    setPML4(v2p(KERNEL_PML4));
 }
 
 const PageAllocator = struct {
@@ -131,7 +151,7 @@ pub const Mapper = struct {
     const Self = @This();
 
     pub fn forCurrentPML4() Self {
-        const cr3 = readCR3();
+        const cr3 = x86.readCR3();
         return .{
             .pml4 = @alignCast(@ptrCast(p2v(cr3.page_table))),
         };
@@ -257,16 +277,4 @@ fn largePageOffset(virt: u64) usize {
 
 fn hugePageOffset(virt: u64) usize {
     return @intCast(virt & 0o777_777_7777);
-}
-
-fn readCR3() struct { page_table: u64, flags: u64 } {
-    const cr3: u64 =
-        asm volatile ("mov %cr3, %rax"
-        : [cr3] "={rax}" (-> u64),
-    );
-
-    return .{
-        .page_table = cr3 & 0o777_777_777_777_0000,
-        .flags = cr3 & 0o7777,
-    };
 }

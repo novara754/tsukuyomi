@@ -1,6 +1,7 @@
 const gdt = @import("../gdt.zig");
 const irq = @import("irq.zig");
 const process = @import("../process.zig");
+const x86 = @import("../x86.zig");
 
 const PRESENT: u8 = 1 << 7;
 
@@ -40,18 +41,11 @@ pub fn init() void {
     const trap_table = @extern(*const [256]u64, .{ .name = "trap_table" });
 
     for (trap_table, 0..) |vector, i| {
-        // const gate_type =
-        //     if (i < 32)
-        //     GATE_TRAP
-        // else
-        //     GATE_INT;
-        const gate_type = GATE_INT;
-
-        // if (i == SYSCALL_VECTOR) {
-        //     IDT[i].set(trap, SEG_KERNEL_CODE << 3, 0, DPL_USER | GATE_TRAP);
-        // } else {
-        IDT[i].set(vector, gdt.SEG_KERNEL_CODE << 3, 0, DPL_KERNEL | gate_type);
-        // }
+        if (i == irq.SYSCALL) {
+            IDT[i].set(vector, gdt.SEG_KERNEL_CODE << 3, 0, DPL_USER | GATE_TRAP);
+        } else {
+            IDT[i].set(vector, gdt.SEG_KERNEL_CODE << 3, 0, DPL_KERNEL | GATE_INT);
+        }
     }
 
     const idtp = IDTP{
@@ -98,12 +92,21 @@ pub const TrapFrame = extern struct {
 export fn handle_trap_inner(tf: *TrapFrame) callconv(.SysV) void {
     const panic = @import("../panic.zig").panic;
     switch (tf.trap_nr) {
+        13 => {
+            panic("general protection fault: e={x}, rip={x}", .{ tf.err_code, tf.rip });
+        },
+        14 => {
+            panic("page fault: e={x}, rip={x}, cr2={x}", .{ tf.err_code, tf.rip, x86.readCR2() });
+        },
         (irq.OFFSET + irq.TIMER) => {
             @import("lapic.zig").eoi();
 
             if (process.CPU_STATE.process) |_| {
                 process.yield();
             }
+        },
+        irq.SYSCALL => {
+            @import("syscall.zig").do_syscall(tf);
         },
         else => panic("trap #{}", .{tf.trap_nr}),
     }

@@ -35,30 +35,13 @@ export fn _start() noreturn {
         ppanic("limine rsdp response is null", .{});
     };
 
+    const modules = limine.MODULES.response orelse {
+        ppanic("limine modules response is null", .{});
+    };
+
     mem.init(@intCast(hhdm_response.*.offset), memory_map);
     const free_pages = mem.PAGE_ALLOCATOR.count_free();
     uart.print("number of usable physical pages: {} ({} bytes)\n", .{ free_pages, free_pages * mem.PAGE_SIZE });
-
-    var mapper = mem.Mapper.forCurrentPML4();
-    {
-        const virt = @intFromPtr(&_start);
-        if (mapper.translate(virt)) |trans| {
-            uart.print("_start: virt={x}, phys={?x}, size={s}\n", .{ virt, trans.phys, @tagName(trans.size) });
-        } else {
-            uart.print("failed to translate _start\n", .{});
-        }
-    }
-    {
-        const page = mem.PAGE_ALLOCATOR.alloc();
-        const virt = 0xFFFA_0000_0000_0000;
-        mapper.map(virt, mem.v2p(page), false);
-        uart.print("mapped {x} to {x}\n", .{ virt, mem.v2p(page) });
-        if (mapper.translate(virt)) |trans| {
-            uart.print("virt={x}, phys={?x}, size={s}\n", .{ virt, trans.phys, @tagName(trans.size) });
-        } else {
-            uart.print("failed to translate\n", .{});
-        }
-    }
 
     gdt.loadKernelGDT();
     uart.print("kernel gdt initialized\n", .{});
@@ -77,39 +60,23 @@ export fn _start() noreturn {
     lapic.init(acpi_data.madt.lapic_base);
     uart.print("lapic initialized\n", .{});
 
-    procFromFunc(@intFromPtr(&proc1), @intFromPtr(&STACK1) + mem.PAGE_SIZE) catch |e| {
-        ppanic("failed to create proc1: {}", .{e});
-    };
-    procFromFunc(@intFromPtr(&proc2), @intFromPtr(&STACK2) + mem.PAGE_SIZE) catch |e| {
-        ppanic("failed to create proc2: {}", .{e});
-    };
+    uart.print("modules loaded:\n", .{});
+    for (modules.modules, 0..modules.module_count) |m, i| {
+        uart.print(" {}. {s}, at={*}, size={}\n", .{ i, m.path, m.address, m.size });
+        const path_len = std.mem.len(m.path);
+        if (std.mem.eql(u8, m.path[0..path_len], "//usr/hello")) {
+            uart.print("making proc for //usr/hello...\n", .{});
+            procFromFile(m) catch |e| {
+                ppanic("procFromFile: {}", .{e});
+            };
+        }
+    }
 
-    // process.scheduler();
-
-    uart.print("spinning...\n", .{});
-    spin();
+    process.scheduler();
 }
 
 pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
     ppanic("{s}", .{msg});
-}
-
-fn proc1() noreturn {
-    while (true) {
-        uart.print("A", .{});
-        for (0..1_00_000) |_| {
-            // std.mem.doNotOptimizeAway(i);
-        }
-    }
-}
-
-fn proc2() noreturn {
-    while (true) {
-        uart.print("B", .{});
-        for (0..1_00_000) |_| {
-            // std.mem.doNotOptimizeAway(i);
-        }
-    }
 }
 
 fn procFromFunc(f: u64, rsp: u64) !void {
@@ -128,5 +95,49 @@ fn procFromFunc(f: u64, rsp: u64) !void {
     proc.state = process.ProcessState.runnable;
 }
 
-export var STACK1: [mem.PAGE_SIZE]u8 = undefined;
-export var STACK2: [mem.PAGE_SIZE]u8 = undefined;
+const USER_STACK_BOTTOM = 0x0000_7000_0000_0000;
+
+fn procFromFile(file: *const limine.File) !void {
+    const elf = std.elf;
+
+    const ehdr: *const elf.Ehdr = @ptrCast(file.address);
+
+    const proc_pml4 = mem.createPML4();
+    mem.setPML4(mem.v2p(proc_pml4));
+    var proc_mapper = mem.Mapper.forCurrentPML4();
+    const phdrs: [*]const elf.Elf64_Phdr = @alignCast(@ptrCast(&file.address[ehdr.e_phoff]));
+    for (phdrs, 0..ehdr.e_phnum) |phdr, _| {
+        if (phdr.p_type != elf.PT_LOAD) {
+            continue;
+        }
+
+        var addr = phdr.p_vaddr;
+        const end = phdr.p_vaddr + phdr.p_memsz;
+        while (addr < end) : (addr += mem.PAGE_SIZE) {
+            const phys = mem.v2p(mem.PAGE_ALLOCATOR.allocZeroed());
+            proc_mapper.map(addr, phys, true);
+        }
+
+        const src: [*]u8 = @ptrCast(&file.address[phdr.p_offset]);
+        const dst: [*]u8 = @ptrFromInt(phdr.p_vaddr);
+        std.mem.copyForwards(u8, dst[0..phdr.p_memsz], src[0..phdr.p_filesz]);
+    }
+    const proc_stack_phys = mem.v2p(mem.PAGE_ALLOCATOR.alloc());
+    proc_mapper.map(USER_STACK_BOTTOM, proc_stack_phys, true);
+    mem.restoreKernelPML4();
+
+    const proc_ = process.allocProcess();
+    var proc = proc_ orelse {
+        return error.CouldNotAllocateProcess;
+    };
+    var tf = proc.trap_frame;
+    tf.cs = gdt.SEG_USER_CODE << 3 | 0b11;
+    tf.ds = gdt.SEG_USER_DATA << 3 | 0b11;
+    tf.es = tf.ds;
+    tf.ss = tf.ds;
+    tf.rflags = 0x200; // IF
+    tf.rsp = USER_STACK_BOTTOM + mem.PAGE_SIZE;
+    tf.rip = ehdr.e_entry;
+    proc.state = process.ProcessState.runnable;
+    proc.pml4 = mem.v2p(proc_pml4);
+}

@@ -1,3 +1,5 @@
+const mem = @import("mem.zig");
+
 fn request_id(comptime first: u64, comptime second: u64) [4]u64 {
     return [4]u64{ 0xc7b1dd30df4c8b88, 0x0a82e883a194f07b, first, second };
 }
@@ -92,3 +94,41 @@ const RSDPRequest = extern struct {
 };
 
 pub export var RSDP linksection(".requests") = RSDPRequest{};
+
+const UUID = extern struct {
+    a: u32,
+    b: u16,
+    c: u16,
+    d: [8]u8,
+};
+
+pub const File = extern struct {
+    revision: u64,
+    address: [*]align(mem.PAGE_SIZE) u8,
+    size: u64,
+    path: [*:0]u8,
+    cmdline: [*:0]u8,
+    media_type: u32,
+    unused: u32,
+    tftp_ip: u32,
+    tftp_port: u32,
+    partition_index: u32,
+    mbr_disk_id: u32,
+    gpt_disk_uuid: UUID,
+    gpt_part_uuid: UUID,
+    part_uuid: UUID,
+};
+
+const ModuleResponse = extern struct {
+    revision: u64,
+    module_count: u64,
+    modules: [*]*const File,
+};
+
+const ModuleRequest = extern struct {
+    id: [4]u64 = request_id(0x3e7e279702be32af, 0xca1c4f3bd1280cee),
+    revision: u64 = 0,
+    response: ?*ModuleResponse = null,
+};
+
+pub export var MODULES linksection(".requests") = ModuleRequest{};

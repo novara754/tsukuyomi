@@ -1,7 +1,7 @@
 const TrapFrame = @import("interrupts/idt.zig").TrapFrame;
 const Spinlock = @import("Spinlock.zig");
 const mem = @import("mem.zig");
-const TSS = @import("gdt.zig").TSS;
+const gdt = @import("gdt.zig");
 const panic = @import("panic.zig").panic;
 
 const MAX_NUM_PROCESSES = 16;
@@ -34,14 +34,14 @@ const Process = struct {
 
 const CPU = struct {
     gdt: [7]u64 = .{ 0, 0, 0, 0, 0, 0, 0 },
-    tss: TSS = .{},
+    tss: gdt.TSS = .{},
     scheduler_context: *Context = undefined,
     process: ?*Process = null,
 };
 
 var NEXT_PID: u64 = 0;
 var LOCK = Spinlock{};
-var PROCESSES: [MAX_NUM_PROCESSES]Process = [1]Process{Process{
+pub var PROCESSES: [MAX_NUM_PROCESSES]Process = [1]Process{Process{
     .state = .unused,
     .pid = undefined,
     .pml4 = undefined,
@@ -61,6 +61,7 @@ pub fn allocProcess() ?*Process {
     for (&PROCESSES) |*it| {
         if (it.state == .unused) {
             p = it;
+            break;
         }
     }
 
@@ -101,7 +102,12 @@ pub fn scheduler() noreturn {
 
             proc.state = ProcessState.running;
             CPU_STATE.process = proc;
+            CPU_STATE.tss.rsp0 = @intFromPtr(proc.kernel_stack) + mem.PAGE_SIZE;
+            gdt.loadGDTWithTSS(&CPU_STATE.gdt, &CPU_STATE.tss);
+            mem.setPML4(proc.pml4);
             switchContext(&CPU_STATE.scheduler_context, proc.context);
+            mem.restoreKernelPML4();
+            gdt.loadKernelGDT();
             CPU_STATE.process = null;
         }
         LOCK.release();

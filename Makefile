@@ -1,4 +1,5 @@
 KERNEL = kernel/zig-out/bin/tsukuyomi
+USER_PROGS = user/zig-out/bin
 
 NUM_CPUS ?= 1
 
@@ -16,11 +17,13 @@ QEMU_EXTRA ?=
 .PHONY: all
 all: kernel
 
-.PHONY: install-kernel
-install-kernel: $(KERNEL) hdd.img
+.PHONY: install
+install: $(KERNEL) hdd.img
 	sudo losetup /dev/loop0 hdd.img --offset 1048576 --sizelimit 16777216
 	sudo mount /dev/loop0 hdd_esp
 	sudo cp $(KERNEL) hdd_esp/boot/
+	sudo mkdir -p hdd_esp/usr/
+	sudo cp $(USER_PROGS)/* hdd_esp/usr/
 	sudo umount hdd_esp
 	sudo losetup --detach /dev/loop0
 
@@ -28,9 +31,13 @@ install-kernel: $(KERNEL) hdd.img
 kernel: $(KERNEL)
 
 .PHONY: $(KERNEL)
-$(KERNEL): kernel/src/interrupts/traps.s
+$(KERNEL): user kernel/src/interrupts/traps.s
 	cd kernel && zig build
 	objdump -d -M intel $(KERNEL) > $(KERNEL).asm
+
+.PHONY: user
+user:
+	cd user && zig build
 
 kernel/src/interrupts/traps.s: gen_traps.py
 	python gen_traps.py >> $@
@@ -39,11 +46,11 @@ hdd.img: ./mkfs.sh limine.conf
 	./mkfs.sh
 
 .PHONY: qemu
-qemu: install-kernel
+qemu: install
 	$(QEMU) $(QEMU_EXTRA) $(QEMU_ARGS)
 
 .PHONY: qemu-gdb
-qemu-gdb: install-kernel
+qemu-gdb: install
 	$(QEMU) $(QEMU_EXTRA) $(QEMU_ARGS) -S -s
 
 .PHONY: clean
