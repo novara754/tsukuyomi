@@ -24,6 +24,7 @@ pub const ProcessState = enum {
 };
 
 const Process = struct {
+    name: []const u8,
     state: ProcessState,
     pid: u64,
     pml4: usize,
@@ -43,6 +44,7 @@ var NEXT_PID: u64 = 0;
 var LOCK = Spinlock{};
 pub var PROCESSES: [MAX_NUM_PROCESSES]Process = [1]Process{Process{
     .state = .unused,
+    .name = undefined,
     .pid = undefined,
     .pml4 = undefined,
     .kernel_stack = undefined,
@@ -53,7 +55,7 @@ pub var CPU_STATE = CPU{};
 
 extern fn handle_trap_ret() void;
 
-pub fn allocProcess() ?*Process {
+pub fn allocProcess(name: []const u8) ?*Process {
     LOCK.acquire();
     defer LOCK.release();
 
@@ -67,6 +69,7 @@ pub fn allocProcess() ?*Process {
 
     const proc: *Process = p orelse return null;
     proc.state = .embryo;
+    proc.name = name;
     proc.pid = @atomicRmw(u64, &NEXT_PID, .Add, 1, .seq_cst);
     proc.kernel_stack = @ptrCast(mem.PAGE_ALLOCATOR.alloc());
 

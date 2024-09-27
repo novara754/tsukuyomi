@@ -66,7 +66,10 @@ export fn _start() noreturn {
         const path_len = std.mem.len(m.path);
         if (std.mem.eql(u8, m.path[0..path_len], "//usr/hello")) {
             uart.print("making proc for //usr/hello...\n", .{});
-            procFromFile(m) catch |e| {
+            procFromFile(m, "hello1") catch |e| {
+                ppanic("procFromFile: {}", .{e});
+            };
+            procFromFile(m, "hello2") catch |e| {
                 ppanic("procFromFile: {}", .{e});
             };
         }
@@ -79,25 +82,9 @@ pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
     ppanic("{s}", .{msg});
 }
 
-fn procFromFunc(f: u64, rsp: u64) !void {
-    const proc_ = process.allocProcess();
-    var proc = proc_ orelse {
-        return error.CouldNotAllocateProcess;
-    };
-    var tf = proc.trap_frame;
-    tf.cs = gdt.SEG_KERNEL_CODE << 3;
-    tf.ds = gdt.SEG_KERNEL_DATA << 3;
-    tf.es = tf.ds;
-    tf.ss = tf.ds;
-    tf.rflags = 0x200; // IF
-    tf.rsp = rsp;
-    tf.rip = f;
-    proc.state = process.ProcessState.runnable;
-}
-
 const USER_STACK_BOTTOM = 0x0000_7000_0000_0000;
 
-fn procFromFile(file: *const limine.File) !void {
+fn procFromFile(file: *const limine.File, name: []const u8) !void {
     const elf = std.elf;
 
     const ehdr: *const elf.Ehdr = @ptrCast(file.address);
@@ -126,7 +113,7 @@ fn procFromFile(file: *const limine.File) !void {
     proc_mapper.map(USER_STACK_BOTTOM, proc_stack_phys, true);
     mem.restoreKernelPML4();
 
-    const proc_ = process.allocProcess();
+    const proc_ = process.allocProcess(name);
     var proc = proc_ orelse {
         return error.CouldNotAllocateProcess;
     };

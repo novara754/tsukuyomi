@@ -34,7 +34,15 @@ fn _exit(status: c_int) noreturn {
 
 export fn _start() noreturn {
     const message = "HELLO WORLD!\n";
-    _exit(@intCast(write(STDOUT_FILENO, message, message.len)));
+
+    while (true) {
+        _ = write(STDOUT_FILENO, message, message.len);
+        for (0..1_000_000) |i| {
+            std.mem.doNotOptimizeAway(i);
+        }
+    }
+
+    // _exit(@intCast(write(STDOUT_FILENO, message, message.len)));
 }
 
 pub fn panic(_: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {

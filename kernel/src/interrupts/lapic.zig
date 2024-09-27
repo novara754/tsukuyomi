@@ -118,9 +118,9 @@ pub fn init(base_ptr: [*]u32) void {
     LAPIC.write(SVR, SVR_ENABLE | (irq.OFFSET + irq.SPURIOUS));
 
     // Timer repeatedly counts down at frequency in TICR
-    // LAPIC.write(TDCR, TDCR_1);
-    // LAPIC.write(TIMER, TIMER_PERIODIC | (irq.OFFSET + irq.TIMER));
-    // LAPIC.write(TICR, 10000000);
+    LAPIC.write(TDCR, TDCR_1);
+    LAPIC.write(TIMER, TIMER_PERIODIC | (irq.OFFSET + irq.TIMER));
+    LAPIC.write(TICR, 10000000);
 
     // Disable LVTs
     LAPIC.write(LINT0, INT_MASKED);

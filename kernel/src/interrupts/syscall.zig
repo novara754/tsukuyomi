@@ -1,6 +1,6 @@
 const TrapFrame = @import("idt.zig").TrapFrame;
 const panic = @import("../panic.zig").panic;
-
+const process = @import("../process.zig");
 const SYS_EXIT = 60;
 const SYS_WRITE = 1;
 
@@ -24,7 +24,8 @@ pub fn do_syscall(tf: *TrapFrame) void {
             }
 
             const data = buf[0..count];
-            @import("../uart.zig").print("{s}", .{data});
+            const proc = process.CPU_STATE.process orelse unreachable;
+            @import("../uart.zig").print("{s}: {s}", .{ proc.name, data });
 
             tf.rax = count;
         },
