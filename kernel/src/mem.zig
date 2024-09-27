@@ -1,5 +1,6 @@
 const limine = @import("limine.zig");
 const uart = @import("uart.zig");
+const panic = @import("panic.zig").panic;
 const Spinlock = @import("Spinlock.zig");
 
 pub const PAGE_SIZE: usize = 4096;
@@ -58,6 +59,13 @@ const PageAllocator = struct {
         }
     }
 
+    pub fn allocZeroed(self: *Self) *align(PAGE_SIZE) anyopaque {
+        const ret = self.alloc();
+        const page: *[PAGE_SIZE]u8 = @ptrCast(ret);
+        page.* = [1]u8{0} ** PAGE_SIZE;
+        return ret;
+    }
+
     pub fn free(self: *Self, page: *align(PAGE_SIZE) anyopaque) void {
         self.lock.acquire();
         defer self.lock.release();
@@ -81,3 +89,184 @@ const PageAllocator = struct {
 };
 
 pub var PAGE_ALLOCATOR = PageAllocator{};
+
+const PTE_P = 1 << 0;
+const PTE_RW = 1 << 1;
+const PTE_US = 1 << 2;
+const PTE_PS = 1 << 7;
+
+const PageTableEntry = extern struct {
+    raw: u64,
+
+    const Self = @This();
+
+    fn pack(addr: u64, flags: u64) PageTableEntry {
+        return .{ .raw = addr | flags };
+    }
+
+    fn frame(self: *const Self) u64 {
+        return self.raw & 0o777_777_777_777_0000;
+    }
+
+    fn present(self: *const Self) bool {
+        return self.raw & PTE_P != 0;
+    }
+
+    fn pageSize(self: *const Self) bool {
+        return self.raw & PTE_PS != 0;
+    }
+};
+
+const PageTable = [512]PageTableEntry;
+
+const PageSize = enum {
+    _4KiB,
+    _2MiB,
+    _1GiB,
+};
+
+pub const Mapper = struct {
+    pml4: *PageTable,
+
+    const Self = @This();
+
+    pub fn forCurrentPML4() Self {
+        const cr3 = readCR3();
+        return .{
+            .pml4 = @alignCast(@ptrCast(p2v(cr3.page_table))),
+        };
+    }
+
+    pub fn translate(self: *const Self, virt: u64) ?struct { phys: u64, size: PageSize } {
+        const pml4_entry = &self.pml4[pml4Index(virt)];
+        if (!pml4_entry.present()) {
+            return null;
+        }
+
+        const pdpt: *PageTable = @alignCast(@ptrCast(p2v(pml4_entry.frame())));
+        const pdpt_entry = &pdpt[pdptIndex(virt)];
+        if (!pdpt_entry.present()) {
+            return null;
+        }
+
+        if (pdpt_entry.pageSize()) {
+            return .{
+                .phys = pdpt_entry.frame() + hugePageOffset(virt),
+                .size = PageSize._1GiB,
+            };
+        }
+
+        const pd: *PageTable = @alignCast(@ptrCast(p2v(pdpt_entry.frame())));
+        const pd_entry = &pd[pdIndex(virt)];
+        if (!pd_entry.present()) {
+            return null;
+        }
+
+        if (pd_entry.pageSize()) {
+            return .{
+                .phys = pd_entry.frame() + largePageOffset(virt),
+                .size = PageSize._2MiB,
+            };
+        }
+
+        const pt: *PageTable = @alignCast(@ptrCast(p2v(pd_entry.frame())));
+        const pt_entry = &pt[ptIndex(virt)];
+        if (!pt_entry.present()) {
+            return null;
+        }
+
+        return .{
+            .phys = pt_entry.frame() + basePageOffset(virt),
+            .size = PageSize._4KiB,
+        };
+    }
+
+    pub fn map(self: *Self, virt: u64, phys: u64, is_user: bool) void {
+        if (!isBasePageAligned(virt)) {
+            panic("Mapper.map: `virt` is not page aligned (virt = {x})", .{virt});
+        }
+
+        if (!isBasePageAligned(phys)) {
+            panic("Mapper.map: `phys` is not page aligned (phys = {x})", .{phys});
+        }
+
+        const flags: u64 = if (is_user) (PTE_P | PTE_RW | PTE_US) else (PTE_P | PTE_RW);
+
+        const pml4_entry = &self.pml4[pml4Index(virt)];
+        if (!pml4_entry.present()) {
+            const pdpt = v2p(PAGE_ALLOCATOR.allocZeroed());
+            pml4_entry.* = PageTableEntry.pack(pdpt, flags);
+        }
+
+        const pdpt: *PageTable = @alignCast(@ptrCast(p2v(pml4_entry.frame())));
+        const pdpt_entry = &pdpt[pdptIndex(virt)];
+        if (!pdpt_entry.present()) {
+            const pd = v2p(PAGE_ALLOCATOR.allocZeroed());
+            pdpt_entry.* = PageTableEntry.pack(pd, flags);
+        }
+
+        const pd: *PageTable = @alignCast(@ptrCast(p2v(pdpt_entry.frame())));
+        const pd_entry = &pd[pdIndex(virt)];
+        if (!pd_entry.present()) {
+            const pt = v2p(PAGE_ALLOCATOR.allocZeroed());
+            pd_entry.* = PageTableEntry.pack(pt, flags);
+        }
+
+        const pt: *PageTable = @alignCast(@ptrCast(p2v(pd_entry.frame())));
+        const pt_entry = &pt[ptIndex(virt)];
+        if (pt_entry.present()) {
+            panic("Mapper.map: `virt` is in used (virt = {x})", .{virt});
+        }
+
+        pt_entry.* = PageTableEntry.pack(phys, flags);
+
+        asm volatile ("invlpg (%rax)"
+            :
+            : [addr] "{rax}" (virt),
+        );
+    }
+};
+
+fn isBasePageAligned(addr: u64) bool {
+    return addr % PAGE_SIZE == 0;
+}
+
+fn pml4Index(virt: u64) usize {
+    return @intCast((virt >> 39) & 0o777);
+}
+
+fn pdptIndex(virt: u64) usize {
+    return @intCast((virt >> 30) & 0o777);
+}
+
+fn pdIndex(virt: u64) usize {
+    return @intCast((virt >> 21) & 0o777);
+}
+
+fn ptIndex(virt: u64) usize {
+    return @intCast((virt >> 12) & 0o777);
+}
+
+fn basePageOffset(virt: u64) usize {
+    return @intCast(virt & 0o7777);
+}
+
+fn largePageOffset(virt: u64) usize {
+    return @intCast(virt & 0o777_7777);
+}
+
+fn hugePageOffset(virt: u64) usize {
+    return @intCast(virt & 0o777_777_7777);
+}
+
+fn readCR3() struct { page_table: u64, flags: u64 } {
+    const cr3: u64 =
+        asm volatile ("mov %cr3, %rax"
+        : [cr3] "={rax}" (-> u64),
+    );
+
+    return .{
+        .page_table = cr3 & 0o777_777_777_777_0000,
+        .flags = cr3 & 0o7777,
+    };
+}

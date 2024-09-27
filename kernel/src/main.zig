@@ -39,6 +39,27 @@ export fn _start() noreturn {
     const free_pages = mem.PAGE_ALLOCATOR.count_free();
     uart.print("number of usable physical pages: {} ({} bytes)\n", .{ free_pages, free_pages * mem.PAGE_SIZE });
 
+    var mapper = mem.Mapper.forCurrentPML4();
+    {
+        const virt = @intFromPtr(&_start);
+        if (mapper.translate(virt)) |trans| {
+            uart.print("_start: virt={x}, phys={?x}, size={s}\n", .{ virt, trans.phys, @tagName(trans.size) });
+        } else {
+            uart.print("failed to translate _start\n", .{});
+        }
+    }
+    {
+        const page = mem.PAGE_ALLOCATOR.alloc();
+        const virt = 0xFFFA_0000_0000_0000;
+        mapper.map(virt, mem.v2p(page), false);
+        uart.print("mapped {x} to {x}\n", .{ virt, mem.v2p(page) });
+        if (mapper.translate(virt)) |trans| {
+            uart.print("virt={x}, phys={?x}, size={s}\n", .{ virt, trans.phys, @tagName(trans.size) });
+        } else {
+            uart.print("failed to translate\n", .{});
+        }
+    }
+
     gdt.loadKernelGDT();
     uart.print("kernel gdt initialized\n", .{});
 
@@ -63,10 +84,10 @@ export fn _start() noreturn {
         ppanic("failed to create proc2: {}", .{e});
     };
 
-    process.scheduler();
+    // process.scheduler();
 
-    // uart.print("spinning...\n", .{});
-    // spin();
+    uart.print("spinning...\n", .{});
+    spin();
 }
 
 pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
