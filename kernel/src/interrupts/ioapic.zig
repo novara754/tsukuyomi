@@ -1,4 +1,5 @@
 const irq = @import("irq.zig");
+const panic = @import("../panic.zig").panic;
 
 const IOAPICID: u32 = 0;
 const IOAPICVER: u32 = 1;
@@ -22,6 +23,8 @@ const IOAPIC = struct {
     }
 };
 
+var IOAPIC_: ?IOAPIC = null;
+
 pub fn init(base_ptr: [*]u32) void {
     var ioapic = IOAPIC{
         .ioregsel = &base_ptr[0x00],
@@ -34,4 +37,12 @@ pub fn init(base_ptr: [*]u32) void {
         ioapic.write(0x10 + 2 * i, INT_DISABLED | (irq.OFFSET + i));
         ioapic.write(0x10 + 2 * i + 1, 0);
     }
+
+    IOAPIC_ = ioapic;
+}
+
+pub fn enable(irqn: u32, cpu: u32) void {
+    var ioapic = IOAPIC_ orelse panic("ioapic.enable: ioapic not initialized", .{});
+    ioapic.write(0x10 + 2 * irqn, irq.OFFSET + irqn);
+    ioapic.write(0x10 + 2 * irqn + 1, cpu << 24);
 }

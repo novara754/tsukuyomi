@@ -1,3 +1,4 @@
+const std = @import("std");
 const mem = @import("mem.zig");
 
 fn request_id(comptime first: u64, comptime second: u64) [4]u64 {
@@ -117,6 +118,11 @@ pub const File = extern struct {
     gpt_disk_uuid: UUID,
     gpt_part_uuid: UUID,
     part_uuid: UUID,
+
+    pub fn path_slice(self: *const @This()) []const u8 {
+        const len = std.mem.len(self.path);
+        return self.path[0..len];
+    }
 };
 
 const ModuleResponse = extern struct {

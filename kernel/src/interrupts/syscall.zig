@@ -1,36 +1,90 @@
+const std = @import("std");
 const TrapFrame = @import("idt.zig").TrapFrame;
 const panic = @import("../panic.zig").panic;
 const process = @import("../process.zig");
-const SYS_EXIT = 60;
-const SYS_WRITE = 1;
+const vfs = @import("../vfs.zig");
 
-pub const STDOUT_FILENO: i32 = 1;
+const STDIN_FILENO = 0;
+const STDOUT_FILENO = 1;
+const STDERR_FILENO = 2;
+
+const O_RDONLY = 0;
+const O_WRONLY = 1;
+const O_RDWR = 2;
+
+const SYS_READ = 0;
+const SYS_WRITE = 1;
+const SYS_OPEN = 2;
+const SYS_CLOSE = 3;
+const SYS_FORK = 57;
+const SYS_EXECVE = 59;
+const SYS_EXIT = 60;
+const SYS_WAIT4 = 61;
 
 pub fn do_syscall(tf: *TrapFrame) void {
+    const proc = process.CPU_STATE.process orelse {
+        panic("doSyscall called without process", .{});
+    };
+
     switch (tf.rax) {
-        SYS_WRITE => {
+        SYS_READ => {
             const fd = tf.rdi;
             const buf: [*]u8 = @ptrFromInt(tf.rsi);
             const count = tf.rdx;
-
-            if (fd != STDOUT_FILENO) {
-                tf.rax = ~@as(u64, 0);
-                return;
-            }
 
             if (!isUserPointer(buf)) {
                 tf.rax = ~@as(u64, 0);
                 return;
             }
 
-            const data = buf[0..count];
-            const proc = process.CPU_STATE.process orelse unreachable;
-            @import("../uart.zig").print("{s}: {s}", .{ proc.name, data });
+            const file = proc.files[fd] orelse {
+                tf.rax = ~@as(u64, 0);
+                return;
+            };
 
-            tf.rax = count;
+            const dst = buf[0..count];
+            tf.rax = vfs.read(file, dst);
+        },
+        SYS_WRITE => {
+            const fd = tf.rdi;
+            const buf: [*]const u8 = @ptrFromInt(tf.rsi);
+            const count = tf.rdx;
+
+            if (!isUserPointer(buf)) {
+                tf.rax = ~@as(u64, 0);
+                return;
+            }
+
+            const file = proc.files[fd] orelse {
+                tf.rax = ~@as(u64, 0);
+                return;
+            };
+
+            const src = buf[0..count];
+            tf.rax = vfs.write(file, src);
+        },
+        SYS_OPEN => {
+            const filename: [*:0]const u8 = @ptrFromInt(tf.rdi);
+            // const _: c_int = @intCast(tf.rsi);
+
+            if (!isUserPointer(filename)) {
+                tf.rax = ~@as(u64, 0);
+                return;
+            }
+
+            const filename_len = std.mem.len(filename);
+            const path = filename[0..filename_len];
+
+            if (vfs.open(path)) |file| {
+                tf.rax = process.addOpenFile(proc, file) catch ~@as(u64, 0);
+                return;
+            } else {
+                tf.rax = ~@as(u64, 0);
+                return;
+            }
         },
         SYS_EXIT => {
-            panic("sys_exit not implemented", .{});
+            process.doExit(tf.rdi);
         },
         else => panic("syscall unimplemented: nr={}", .{tf.rax}),
     }

@@ -11,6 +11,7 @@ const idt = @import("interrupts/idt.zig");
 const ioapic = @import("interrupts/ioapic.zig");
 const lapic = @import("interrupts/lapic.zig");
 const process = @import("process.zig");
+const lmfs = @import("vfs/lmfs.zig");
 
 export fn _start() noreturn {
     uart.init() catch {
@@ -63,18 +64,25 @@ export fn _start() noreturn {
     uart.print("modules loaded:\n", .{});
     for (modules.modules, 0..modules.module_count) |m, i| {
         uart.print(" {}. {s}, at={*}, size={}\n", .{ i, m.path, m.address, m.size });
-        const path_len = std.mem.len(m.path);
-        if (std.mem.eql(u8, m.path[0..path_len], "//usr/hello")) {
-            uart.print("making proc for //usr/hello...\n", .{});
-            procFromFile(m, "hello1") catch |e| {
-                ppanic("procFromFile: {}", .{e});
-            };
-            procFromFile(m, "hello2") catch |e| {
-                ppanic("procFromFile: {}", .{e});
-            };
-        }
+        lmfs.registerFile(m) catch |e| {
+            ppanic("registerFile: {}", .{e});
+        };
     }
 
+    if (lmfs.open("//usr/sh")) |file| {
+        uart.print("making proc for //usr/sh...\n", .{});
+        procFromFile(file.ref, "sh") catch |e| {
+            ppanic("procFromFile: {}", .{e});
+        };
+    } else {
+        ppanic("//usr/sh not found", .{});
+    }
+
+    uart.UART1.enableInterrupts();
+    uart.print("uart1 interrupts enabled\n", .{});
+
+    // asm volatile ("sti");
+    // spin();
     process.scheduler();
 }
 

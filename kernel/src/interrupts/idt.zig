@@ -2,6 +2,8 @@ const gdt = @import("../gdt.zig");
 const irq = @import("irq.zig");
 const process = @import("../process.zig");
 const x86 = @import("../x86.zig");
+const lapic = @import("lapic.zig");
+const uart = @import("../uart.zig");
 
 const PRESENT: u8 = 1 << 7;
 
@@ -99,11 +101,15 @@ export fn handle_trap_inner(tf: *TrapFrame) callconv(.SysV) void {
             panic("page fault: e={x}, rip={x}, cr2={x}", .{ tf.err_code, tf.rip, x86.readCR2() });
         },
         (irq.OFFSET + irq.TIMER) => {
-            @import("lapic.zig").eoi();
+            lapic.eoi();
 
             if (process.CPU_STATE.process) |_| {
                 process.yield();
             }
+        },
+        (irq.OFFSET + irq.UART1) => {
+            uart.UART1.handleInterrupt();
+            lapic.eoi();
         },
         irq.SYSCALL => {
             @import("syscall.zig").do_syscall(tf);

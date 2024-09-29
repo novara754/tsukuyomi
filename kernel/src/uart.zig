@@ -3,6 +3,9 @@ const std = @import("std");
 const x86 = @import("x86.zig");
 const outb = x86.outb;
 const inb = x86.inb;
+const ioapic = @import("interrupts/ioapic.zig");
+const irq = @import("interrupts/irq.zig");
+const uartfs = @import("vfs/uartfs.zig");
 
 //// Base clock frequency
 const BASE_FREQ: u32 = 115200;
@@ -72,11 +75,11 @@ const Uart = struct {
         var i: u8 = 0;
         while (i < 128) : (i += 1) {
             x86.pause();
-            if (inb(self.base_port + 5) & 0x20 != 0) {
+            if (inb(self.base_port + LINE_STATUS) & 0x20 != 0) {
                 break;
             }
         }
-        outb(self.base_port + 0, c);
+        outb(self.base_port + RX_TX, c);
     }
 
     pub fn puts(self: *const Self, s: []const u8) void {
@@ -94,6 +97,22 @@ const Uart = struct {
         while (i < n) : (i += 1) {
             self.puts(bytes);
         }
+    }
+
+    pub fn getc(self: *const Self) ?u8 {
+        if (inb(self.base_port + LINE_STATUS) & 0x01 == 0)
+            return null;
+        return inb(self.base_port + RX_TX);
+    }
+
+    pub fn handleInterrupt(self: *const Self) void {
+        const b = self.getc() orelse return;
+        uartfs.put(b);
+    }
+
+    pub fn enableInterrupts(self: *const Self) void {
+        outb(self.base_port + INT_EN, 1);
+        ioapic.enable(irq.UART1, 0);
     }
 };
 

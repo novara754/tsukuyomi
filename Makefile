@@ -12,6 +12,7 @@ QEMU_ARGS = \
     -no-reboot \
     -nographic \
     -serial mon:stdio
+
 QEMU_EXTRA ?=
 
 .PHONY: all

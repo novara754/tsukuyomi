@@ -2,6 +2,7 @@ const TrapFrame = @import("interrupts/idt.zig").TrapFrame;
 const Spinlock = @import("Spinlock.zig");
 const mem = @import("mem.zig");
 const gdt = @import("gdt.zig");
+const vfs = @import("vfs.zig");
 const panic = @import("panic.zig").panic;
 
 const MAX_NUM_PROCESSES = 16;
@@ -21,6 +22,8 @@ pub const ProcessState = enum {
     embryo,
     runnable,
     running,
+    zombie,
+    sleeping,
 };
 
 const Process = struct {
@@ -31,6 +34,9 @@ const Process = struct {
     kernel_stack: [*]u8,
     trap_frame: *TrapFrame,
     context: *Context,
+    exit_status: u64,
+    files: [16]?vfs.File,
+    wait_channel: u64,
 };
 
 const CPU = struct {
@@ -50,6 +56,9 @@ pub var PROCESSES: [MAX_NUM_PROCESSES]Process = [1]Process{Process{
     .kernel_stack = undefined,
     .trap_frame = undefined,
     .context = undefined,
+    .exit_status = undefined,
+    .files = undefined,
+    .wait_channel = undefined,
 }} ** MAX_NUM_PROCESSES;
 pub var CPU_STATE = CPU{};
 
@@ -87,6 +96,8 @@ pub fn allocProcess(name: []const u8) ?*Process {
     proc.context = @ptrFromInt(sp);
     proc.context.* = Context{};
     proc.context.rip = @intFromPtr(&forkRet);
+
+    proc.files = [1]?vfs.File{null} ** 16;
 
     return proc;
 }
@@ -130,4 +141,57 @@ pub fn yield() void {
 
 fn forkRet() void {
     LOCK.release();
+}
+
+pub fn doExit(status: u64) noreturn {
+    var proc = CPU_STATE.process orelse {
+        panic("doExit was called without an active process", .{});
+    };
+    LOCK.acquire();
+    proc.state = ProcessState.zombie;
+    proc.exit_status = status;
+    switchContext(&proc.context, CPU_STATE.scheduler_context);
+    panic("switchContext returned to doExit", .{});
+}
+
+pub fn addOpenFile(proc: *Process, file: vfs.File) !u64 {
+    for (&proc.files, 0..) |*open_file, i| {
+        if (open_file.* == null) {
+            open_file.* = file;
+            return i;
+        }
+    }
+    return error.TooManyOpenFiles;
+}
+
+pub fn sleep(wait_channel: u64, lock: *Spinlock) void {
+    var proc = CPU_STATE.process orelse {
+        panic("sleep was called without an active process", .{});
+    };
+
+    if (lock != &LOCK) {
+        LOCK.acquire();
+        lock.release();
+    }
+    proc.wait_channel = wait_channel;
+    proc.state = ProcessState.sleeping;
+    switchContext(&proc.context, CPU_STATE.scheduler_context);
+
+    proc.wait_channel = 0;
+
+    if (lock != &LOCK) {
+        LOCK.release();
+        lock.acquire();
+    }
+}
+
+pub fn awaken(wait_channel: u64) void {
+    LOCK.acquire();
+    defer LOCK.release();
+
+    for (&PROCESSES) |*proc| {
+        if (proc.state == ProcessState.sleeping and proc.wait_channel == wait_channel) {
+            proc.state = ProcessState.runnable;
+        }
+    }
 }

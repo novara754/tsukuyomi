@@ -92,6 +92,7 @@ const Lapic = struct {
         defer self.lock.release();
 
         base[reg / @sizeOf(u32)] = data;
+        _ = base[reg / @sizeOf(u32)];
     }
 
     fn read(self: *Self, reg: u64) u32 {
