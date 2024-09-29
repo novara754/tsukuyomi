@@ -48,18 +48,19 @@ export fn _start() noreturn {
         _ = lib.write(tty, &line, line_len);
         _ = lib.write(tty, "\n", 1);
 
-        // const pid = lib.fork();
-        // if (pid < 0) {
-        //     @panic("fork failed");
-        // } else if (pid == 0) {
-        //     // child
-        //     const argv = [2:null]?[*:0]const u8{ &line, null };
-        //     const envp = [1:null]?[*:0]const u8{null};
-        //     lib._exit(lib.execve(&line, &argv, &envp));
-        // } else {
-        //     // parent
-        //     _ = lib.wait4(pid, @ptrFromInt(0), 0, @ptrFromInt(0));
-        // }
+        const pid = lib.fork();
+        if (pid < 0) {
+            @panic("fork failed");
+        } else if (pid == 0) {
+            // child
+            // const argv = [2:null]?[*:0]const u8{ &line, null };
+            // const envp = [1:null]?[*:0]const u8{null};
+            // lib._exit(lib.execve(&line, &argv, &envp));
+            lib._exit(312);
+        } else {
+            // parent
+            _ = lib.wait();
+        }
     }
 }
 

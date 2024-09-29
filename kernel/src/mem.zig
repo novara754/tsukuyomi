@@ -124,22 +124,22 @@ const PageTableEntry = extern struct {
         return .{ .raw = addr | flags };
     }
 
-    fn frame(self: *const Self) u64 {
+    pub fn frame(self: *const Self) u64 {
         return self.raw & 0o777_777_777_777_0000;
     }
 
-    fn present(self: *const Self) bool {
+    pub fn present(self: *const Self) bool {
         return self.raw & PTE_P != 0;
     }
 
-    fn pageSize(self: *const Self) bool {
+    pub fn pageSize(self: *const Self) bool {
         return self.raw & PTE_PS != 0;
     }
 };
 
-const PageTable = [512]PageTableEntry;
+pub const PageTable = [512]PageTableEntry;
 
-const PageSize = enum {
+pub const PageSize = enum {
     _4KiB,
     _2MiB,
     _1GiB,
@@ -155,6 +155,10 @@ pub const Mapper = struct {
         return .{
             .pml4 = @alignCast(@ptrCast(p2v(cr3.page_table))),
         };
+    }
+
+    pub fn forPML4(pml4: *PageTable) Self {
+        return .{ .pml4 = pml4 };
     }
 
     pub fn translate(self: *const Self, virt: u64) ?struct { phys: u64, size: PageSize } {
@@ -235,7 +239,7 @@ pub const Mapper = struct {
         const pt: *PageTable = @alignCast(@ptrCast(p2v(pd_entry.frame())));
         const pt_entry = &pt[ptIndex(virt)];
         if (pt_entry.present()) {
-            panic("Mapper.map: `virt` is in used (virt = {x})", .{virt});
+            panic("Mapper.map: `virt` is in use (virt = {x})", .{virt});
         }
 
         pt_entry.* = PageTableEntry.pack(phys, flags);

@@ -41,7 +41,7 @@ export fn _start() noreturn {
     };
 
     mem.init(@intCast(hhdm_response.*.offset), memory_map);
-    const free_pages = mem.PAGE_ALLOCATOR.count_free();
+    var free_pages = mem.PAGE_ALLOCATOR.count_free();
     uart.print("number of usable physical pages: {} ({} bytes)\n", .{ free_pages, free_pages * mem.PAGE_SIZE });
 
     gdt.loadKernelGDT();
@@ -81,8 +81,9 @@ export fn _start() noreturn {
     uart.UART1.enableInterrupts();
     uart.print("uart1 interrupts enabled\n", .{});
 
-    // asm volatile ("sti");
-    // spin();
+    free_pages = mem.PAGE_ALLOCATOR.count_free();
+    uart.print("number of usable physical pages: {} ({} bytes)\n", .{ free_pages, free_pages * mem.PAGE_SIZE });
+
     process.scheduler();
 }
 
@@ -121,10 +122,7 @@ fn procFromFile(file: *const limine.File, name: []const u8) !void {
     proc_mapper.map(USER_STACK_BOTTOM, proc_stack_phys, true);
     mem.restoreKernelPML4();
 
-    const proc_ = process.allocProcess(name);
-    var proc = proc_ orelse {
-        return error.CouldNotAllocateProcess;
-    };
+    var proc = try process.allocProcess(name);
     var tf = proc.trap_frame;
     tf.cs = gdt.SEG_USER_CODE << 3 | 0b11;
     tf.ds = gdt.SEG_USER_DATA << 3 | 0b11;

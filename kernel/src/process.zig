@@ -1,3 +1,4 @@
+const std = @import("std");
 const TrapFrame = @import("interrupts/idt.zig").TrapFrame;
 const Spinlock = @import("Spinlock.zig");
 const mem = @import("mem.zig");
@@ -30,6 +31,7 @@ const Process = struct {
     name: []const u8,
     state: ProcessState,
     pid: u64,
+    parent: ?*Process,
     pml4: usize,
     kernel_stack: [*]u8,
     trap_frame: *TrapFrame,
@@ -52,6 +54,7 @@ pub var PROCESSES: [MAX_NUM_PROCESSES]Process = [1]Process{Process{
     .state = .unused,
     .name = undefined,
     .pid = undefined,
+    .parent = undefined,
     .pml4 = undefined,
     .kernel_stack = undefined,
     .trap_frame = undefined,
@@ -64,7 +67,7 @@ pub var CPU_STATE = CPU{};
 
 extern fn handle_trap_ret() void;
 
-pub fn allocProcess(name: []const u8) ?*Process {
+pub fn allocProcess(name: []const u8) !*Process {
     LOCK.acquire();
     defer LOCK.release();
 
@@ -76,10 +79,11 @@ pub fn allocProcess(name: []const u8) ?*Process {
         }
     }
 
-    const proc: *Process = p orelse return null;
+    const proc: *Process = p orelse return error.TooManyProcesses;
     proc.state = .embryo;
     proc.name = name;
     proc.pid = @atomicRmw(u64, &NEXT_PID, .Add, 1, .seq_cst);
+    proc.parent = null;
     proc.kernel_stack = @ptrCast(mem.PAGE_ALLOCATOR.alloc());
 
     var sp: usize = @intFromPtr(proc.kernel_stack);
@@ -139,6 +143,89 @@ pub fn yield() void {
     LOCK.release();
 }
 
+pub fn doFork() !u64 {
+    const this_proc = CPU_STATE.process orelse {
+        panic("doFork was called without an active process", .{});
+    };
+
+    var new_proc = try allocProcess(this_proc.name);
+
+    const this_pml4: *mem.PageTable = @alignCast(@ptrCast(mem.p2v(this_proc.pml4)));
+    const new_pml4: *mem.PageTable = @ptrCast(mem.PAGE_ALLOCATOR.allocZeroed());
+
+    var new_mapper = mem.Mapper.forPML4(new_pml4);
+
+    // copy entries for kernel page mappings
+    for (256..512) |i| {
+        if (!this_pml4[i].present()) {
+            continue;
+        }
+
+        new_pml4[i] = this_pml4[i];
+    }
+
+    for (this_pml4[0..256], 0..) |*pml4_entry, pml4_idx| {
+        if (!pml4_entry.present()) {
+            continue;
+        }
+
+        const pdpt: *mem.PageTable = @alignCast(@ptrCast(mem.p2v(pml4_entry.frame())));
+        for (pdpt, 0..) |*pdpt_entry, pdpt_idx| {
+            if (!pdpt_entry.present()) {
+                continue;
+            }
+
+            if (pdpt_entry.pageSize()) {
+                panic("process.fork: pdpt_entry #{} has PS bit set", .{pdpt_idx});
+            }
+
+            const pd: *mem.PageTable = @alignCast(@ptrCast(mem.p2v(pdpt_entry.frame())));
+            for (pd, 0..) |*pd_entry, pd_idx| {
+                if (!pd_entry.present()) {
+                    continue;
+                }
+
+                if (pd_entry.pageSize()) {
+                    panic("process.fork: pd_entry #{} has PS bit set", .{pd_idx});
+                }
+
+                const pt: *mem.PageTable = @alignCast(@ptrCast(mem.p2v(pd_entry.frame())));
+                for (pt, 0..) |*pt_entry, pt_idx| {
+                    if (!pt_entry.present()) {
+                        continue;
+                    }
+
+                    const this_page: *[mem.PAGE_SIZE]u8 = @alignCast(@ptrCast(mem.p2v(pt_entry.frame())));
+
+                    const virt = (pml4_idx << 39) | (pdpt_idx << 30) | (pd_idx << 21) | (pt_idx << 12);
+
+                    const new_page: *[mem.PAGE_SIZE]u8 = @ptrCast(mem.PAGE_ALLOCATOR.alloc());
+                    const new_page_phys = mem.v2p(new_page);
+                    new_mapper.map(virt, new_page_phys, true);
+
+                    new_page.* = this_page.*;
+                }
+            }
+        }
+    }
+
+    new_proc.parent = this_proc;
+    new_proc.pml4 = mem.v2p(new_pml4);
+    new_proc.trap_frame.* = this_proc.trap_frame.*;
+    // set rax to 0 as the return value of fork for the child
+    new_proc.trap_frame.rax = 0;
+
+    for (this_proc.files, 0..) |f, i| {
+        new_proc.files[i] = f;
+    }
+
+    LOCK.acquire();
+    new_proc.state = ProcessState.runnable;
+    LOCK.release();
+
+    return new_proc.pid;
+}
+
 fn forkRet() void {
     LOCK.release();
 }
@@ -150,6 +237,10 @@ pub fn doExit(status: u64) noreturn {
     LOCK.acquire();
     proc.state = ProcessState.zombie;
     proc.exit_status = status;
+    if (proc.parent) |parent| {
+        awakenWithLock(@intFromPtr(parent));
+    }
+    @import("uart.zig").print("process {s} exited with status {}\n", .{ proc.name, status });
     switchContext(&proc.context, CPU_STATE.scheduler_context);
     panic("switchContext returned to doExit", .{});
 }
@@ -180,8 +271,8 @@ pub fn sleep(wait_channel: u64, lock: *Spinlock) void {
     proc.wait_channel = 0;
 
     if (lock != &LOCK) {
-        LOCK.release();
         lock.acquire();
+        LOCK.release();
     }
 }
 
@@ -189,9 +280,47 @@ pub fn awaken(wait_channel: u64) void {
     LOCK.acquire();
     defer LOCK.release();
 
+    awakenWithLock(wait_channel);
+}
+
+pub fn awakenWithLock(wait_channel: u64) void {
     for (&PROCESSES) |*proc| {
         if (proc.state == ProcessState.sleeping and proc.wait_channel == wait_channel) {
             proc.state = ProcessState.runnable;
         }
     }
+}
+
+pub fn wait() u64 {
+    const proc = CPU_STATE.process orelse {
+        panic("sleep was called without an active process", .{});
+    };
+
+    LOCK.acquire();
+    while (true) {
+        var has_children = false;
+        for (&PROCESSES) |*p| {
+            if (p.parent != proc) {
+                continue;
+            }
+
+            has_children = true;
+
+            if (p.state != ProcessState.zombie) {
+                continue;
+            }
+
+            // todo: free p's memory
+            p.state = ProcessState.unused;
+            LOCK.release();
+            return p.pid;
+        }
+        if (has_children) {
+            sleep(@intFromPtr(proc), &LOCK);
+        } else {
+            break;
+        }
+    }
+    LOCK.release();
+    return ~@as(u64, 0);
 }

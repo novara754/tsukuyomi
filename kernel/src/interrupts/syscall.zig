@@ -19,7 +19,7 @@ const SYS_CLOSE = 3;
 const SYS_FORK = 57;
 const SYS_EXECVE = 59;
 const SYS_EXIT = 60;
-const SYS_WAIT4 = 61;
+const SYS_WAIT = 61;
 
 pub fn do_syscall(tf: *TrapFrame) void {
     const proc = process.CPU_STATE.process orelse {
@@ -83,8 +83,14 @@ pub fn do_syscall(tf: *TrapFrame) void {
                 return;
             }
         },
+        SYS_FORK => {
+            tf.rax = process.doFork() catch ~@as(u64, 0);
+        },
         SYS_EXIT => {
             process.doExit(tf.rdi);
+        },
+        SYS_WAIT => {
+            tf.rax = process.wait();
         },
         else => panic("syscall unimplemented: nr={}", .{tf.rax}),
     }

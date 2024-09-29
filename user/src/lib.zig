@@ -13,7 +13,7 @@ const SYS_CLOSE = 3;
 const SYS_FORK = 57;
 const SYS_EXECVE = 59;
 const SYS_EXIT = 60;
-const SYS_WAIT4 = 61;
+const SYS_WAIT = 61;
 
 pub const pid_t = c_int;
 
@@ -83,8 +83,8 @@ pub fn close(fd: c_int) c_int {
     return @intCast(syscall1(SYS_CLOSE, @intCast(fd)));
 }
 
-pub fn wait4(pid: pid_t, wstatus: *allowzero c_int, options: c_int, rusage: *allowzero anyopaque) pid_t {
-    return @intCast(syscall4(SYS_WAIT4, @intCast(pid), @intFromPtr(wstatus), @intCast(options), @intFromPtr(rusage)));
+pub fn wait() u64 {
+    return @intCast(syscall0(SYS_WAIT));
 }
 
 pub fn execve(pathname: [*:0]u8, argv: [*:null]const ?[*:0]const u8, envp: [*:null]const ?[*:0]const u8) c_int {
