@@ -86,6 +86,17 @@ pub fn do_syscall(tf: *TrapFrame) void {
         SYS_FORK => {
             tf.rax = process.doFork() catch ~@as(u64, 0);
         },
+        SYS_EXECVE => {
+            const pathname: [*:0]const u8 = @ptrFromInt(tf.rdi);
+            // const _: [*:null]const ?[*:0]const u8 = @ptrFromInt(tf.rsi);
+            // const _ = tf.rdx;
+            const pathname_len = std.mem.len(pathname);
+            const path = pathname[0..pathname_len];
+            process.doExec(path) catch |e| {
+                panic("exec: e={}", .{e});
+                tf.rax = ~@as(u64, 0);
+            };
+        },
         SYS_EXIT => {
             process.doExit(tf.rdi);
         },

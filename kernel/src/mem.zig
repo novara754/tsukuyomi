@@ -145,6 +145,16 @@ pub const PageSize = enum {
     _1GiB,
 };
 
+pub const PageAccess = enum {
+    kernel,
+    user,
+};
+
+pub const MapMode = enum {
+    panic,
+    overwrite,
+};
+
 pub const Mapper = struct {
     pml4: *PageTable,
 
@@ -205,7 +215,7 @@ pub const Mapper = struct {
         };
     }
 
-    pub fn map(self: *Self, virt: u64, phys: u64, is_user: bool) void {
+    pub fn map(self: *Self, virt: u64, phys: u64, access: PageAccess, mode: MapMode) void {
         if (!isBasePageAligned(virt)) {
             panic("Mapper.map: `virt` is not page aligned (virt = {x})", .{virt});
         }
@@ -214,7 +224,7 @@ pub const Mapper = struct {
             panic("Mapper.map: `phys` is not page aligned (phys = {x})", .{phys});
         }
 
-        const flags: u64 = if (is_user) (PTE_P | PTE_RW | PTE_US) else (PTE_P | PTE_RW);
+        const flags: u64 = if (access == .user) (PTE_P | PTE_RW | PTE_US) else (PTE_P | PTE_RW);
 
         const pml4_entry = &self.pml4[pml4Index(virt)];
         if (!pml4_entry.present()) {
@@ -238,7 +248,7 @@ pub const Mapper = struct {
 
         const pt: *PageTable = @alignCast(@ptrCast(p2v(pd_entry.frame())));
         const pt_entry = &pt[ptIndex(virt)];
-        if (pt_entry.present()) {
+        if (pt_entry.present() and mode == .panic) {
             panic("Mapper.map: `virt` is in use (virt = {x})", .{virt});
         }
 

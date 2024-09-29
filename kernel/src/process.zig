@@ -6,6 +6,8 @@ const gdt = @import("gdt.zig");
 const vfs = @import("vfs.zig");
 const panic = @import("panic.zig").panic;
 
+pub const USER_STACK_BOTTOM = 0x0000_7000_0000_0000;
+
 const MAX_NUM_PROCESSES = 16;
 
 const Context = struct {
@@ -201,13 +203,17 @@ pub fn doFork() !u64 {
 
                     const new_page: *[mem.PAGE_SIZE]u8 = @ptrCast(mem.PAGE_ALLOCATOR.alloc());
                     const new_page_phys = mem.v2p(new_page);
-                    new_mapper.map(virt, new_page_phys, true);
+                    new_mapper.map(virt, new_page_phys, .user, .panic);
 
                     new_page.* = this_page.*;
                 }
             }
         }
     }
+    const new_stack: *[mem.PAGE_SIZE]u8 = @ptrCast(mem.PAGE_ALLOCATOR.alloc());
+    const new_stack_phys = mem.v2p(new_stack);
+    new_stack.* = @as(*[mem.PAGE_SIZE]u8, @ptrFromInt(USER_STACK_BOTTOM)).*;
+    new_mapper.map(USER_STACK_BOTTOM, new_stack_phys, .user, .overwrite);
 
     new_proc.parent = this_proc;
     new_proc.pml4 = mem.v2p(new_pml4);
@@ -323,4 +329,50 @@ pub fn wait() u64 {
     }
     LOCK.release();
     return ~@as(u64, 0);
+}
+
+pub fn doExec(path: []const u8) !void {
+    const proc = CPU_STATE.process orelse {
+        panic("exec was called without an active process", .{});
+    };
+
+    const elf = std.elf;
+
+    const file = vfs.open(path) orelse return error.NoSuchFile;
+    const limine_file = switch (file) {
+        .limine => |f| f.ref,
+        .uart => return error.NoSuchFile,
+    };
+
+    var mapper = mem.Mapper.forCurrentPML4();
+
+    const ehdr: *const elf.Ehdr = @ptrCast(limine_file.address);
+    const phdrs: [*]const elf.Elf64_Phdr = @alignCast(@ptrCast(&limine_file.address[ehdr.e_phoff]));
+    for (phdrs[0..ehdr.e_phnum]) |phdr| {
+        if (phdr.p_type != elf.PT_LOAD) {
+            continue;
+        }
+
+        var addr = phdr.p_vaddr;
+        const end = phdr.p_vaddr + phdr.p_memsz;
+        while (addr < end) : (addr += mem.PAGE_SIZE) {
+            const phys = mem.v2p(mem.PAGE_ALLOCATOR.allocZeroed());
+            mapper.map(addr, phys, .user, .overwrite);
+        }
+
+        const src: [*]u8 = @ptrCast(&limine_file.address[phdr.p_offset]);
+        const dst: [*]u8 = @ptrFromInt(phdr.p_vaddr);
+        std.mem.copyForwards(u8, dst[0..phdr.p_memsz], src[0..phdr.p_filesz]);
+    }
+
+    proc.name = limine_file.path_slice();
+    var tf = proc.trap_frame;
+    tf.cs = gdt.SEG_USER_CODE << 3 | 0b11;
+    tf.ds = gdt.SEG_USER_DATA << 3 | 0b11;
+    tf.es = tf.ds;
+    tf.ss = tf.ds;
+    tf.rflags = 0x200; // IF
+    tf.rsp = USER_STACK_BOTTOM + mem.PAGE_SIZE;
+    tf.rip = ehdr.e_entry;
+    proc.state = .runnable;
 }

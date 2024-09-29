@@ -32,6 +32,9 @@ fn gets(tty: c_int, line: []u8) usize {
 
 export fn _start() noreturn {
     const tty = lib.open("/dev/tty", lib.O_RDWR);
+    // open tty twice more for fd 1 and 2 for child processes
+    _ = lib.open("/dev/tty", lib.O_RDWR);
+    _ = lib.open("/dev/tty", lib.O_RDWR);
     if (tty < 0) {
         @panic("failed to open /dev/tty\n");
     }
@@ -53,10 +56,9 @@ export fn _start() noreturn {
             @panic("fork failed");
         } else if (pid == 0) {
             // child
-            // const argv = [2:null]?[*:0]const u8{ &line, null };
-            // const envp = [1:null]?[*:0]const u8{null};
-            // lib._exit(lib.execve(&line, &argv, &envp));
-            lib._exit(312);
+            const argv = [2:null]?[*:0]const u8{ &line, null };
+            const envp = [1:null]?[*:0]const u8{null};
+            lib._exit(lib.execve(&line, &argv, &envp));
         } else {
             // parent
             _ = lib.wait();

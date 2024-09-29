@@ -91,8 +91,6 @@ pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
     ppanic("{s}", .{msg});
 }
 
-const USER_STACK_BOTTOM = 0x0000_7000_0000_0000;
-
 fn procFromFile(file: *const limine.File, name: []const u8) !void {
     const elf = std.elf;
 
@@ -111,7 +109,7 @@ fn procFromFile(file: *const limine.File, name: []const u8) !void {
         const end = phdr.p_vaddr + phdr.p_memsz;
         while (addr < end) : (addr += mem.PAGE_SIZE) {
             const phys = mem.v2p(mem.PAGE_ALLOCATOR.allocZeroed());
-            proc_mapper.map(addr, phys, true);
+            proc_mapper.map(addr, phys, .user, .panic);
         }
 
         const src: [*]u8 = @ptrCast(&file.address[phdr.p_offset]);
@@ -119,7 +117,7 @@ fn procFromFile(file: *const limine.File, name: []const u8) !void {
         std.mem.copyForwards(u8, dst[0..phdr.p_memsz], src[0..phdr.p_filesz]);
     }
     const proc_stack_phys = mem.v2p(mem.PAGE_ALLOCATOR.alloc());
-    proc_mapper.map(USER_STACK_BOTTOM, proc_stack_phys, true);
+    proc_mapper.map(process.USER_STACK_BOTTOM, proc_stack_phys, .user, .panic);
     mem.restoreKernelPML4();
 
     var proc = try process.allocProcess(name);
@@ -129,7 +127,7 @@ fn procFromFile(file: *const limine.File, name: []const u8) !void {
     tf.es = tf.ds;
     tf.ss = tf.ds;
     tf.rflags = 0x200; // IF
-    tf.rsp = USER_STACK_BOTTOM + mem.PAGE_SIZE;
+    tf.rsp = process.USER_STACK_BOTTOM + mem.PAGE_SIZE;
     tf.rip = ehdr.e_entry;
     proc.state = process.ProcessState.runnable;
     proc.pml4 = mem.v2p(proc_pml4);
