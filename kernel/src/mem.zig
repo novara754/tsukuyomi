@@ -8,7 +8,7 @@ pub const PAGE_SIZE: usize = 4096;
 
 var PHYS_MEM_OFFSET: usize = 0;
 
-pub fn phys_mem_offset() usize {
+pub fn physMemOffset() usize {
     if (PHYS_MEM_OFFSET == 0) {
         @panic("g_phys_mem_offset not initialized");
     }
@@ -16,11 +16,11 @@ pub fn phys_mem_offset() usize {
 }
 
 pub fn p2v(phys: usize) *anyopaque {
-    return @ptrFromInt(phys + phys_mem_offset());
+    return @ptrFromInt(phys + physMemOffset());
 }
 
 pub fn v2p(ptr: *const anyopaque) usize {
-    return @intFromPtr(ptr) - phys_mem_offset();
+    return @intFromPtr(ptr) - physMemOffset();
 }
 
 var KERNEL_PML4: *const PageTable = undefined;
@@ -95,7 +95,7 @@ const PageAllocator = struct {
         self.root_node = node;
     }
 
-    pub fn count_free(self: *Self) usize {
+    pub fn countFree(self: *Self) usize {
         self.lock.acquire();
         defer self.lock.release();
 

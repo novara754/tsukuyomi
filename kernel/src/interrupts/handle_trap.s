@@ -1,8 +1,8 @@
 .section .text
-.extern handle_trap_inner
-.global handle_trap
-.global handle_trap_ret
-handle_trap:
+.extern handleTrapInner
+.global handleTrap
+.global handleTrapRet
+handleTrap:
 	pushq %r15
 	movq %es, %r15
 	pushq %r15
@@ -23,8 +23,8 @@ handle_trap:
 	pushq %rbx
 	pushq %rax
 	movq %rsp, %rdi
-	call handle_trap_inner
-handle_trap_ret:
+	call handleTrapInner
+handleTrapRet:
 	popq %rax
 	popq %rbx
 	popq %rcx

@@ -91,7 +91,7 @@ pub const TrapFrame = extern struct {
     _ss_padding: [6]u8,
 };
 
-export fn handle_trap_inner(tf: *TrapFrame) callconv(.SysV) void {
+export fn handleTrapInner(tf: *TrapFrame) callconv(.SysV) void {
     const panic = @import("../panic.zig").panic;
     switch (tf.trap_nr) {
         13 => {
@@ -112,7 +112,7 @@ export fn handle_trap_inner(tf: *TrapFrame) callconv(.SysV) void {
             lapic.eoi();
         },
         irq.SYSCALL => {
-            @import("syscall.zig").do_syscall(tf);
+            @import("syscall.zig").doSyscall(tf);
         },
         else => panic("trap #{}", .{tf.trap_nr}),
     }

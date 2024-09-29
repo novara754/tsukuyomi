@@ -41,7 +41,7 @@ export fn _start() noreturn {
     };
 
     mem.init(@intCast(hhdm_response.*.offset), memory_map);
-    var free_pages = mem.PAGE_ALLOCATOR.count_free();
+    var free_pages = mem.PAGE_ALLOCATOR.countFree();
     uart.print("number of usable physical pages: {} ({} bytes)\n", .{ free_pages, free_pages * mem.PAGE_SIZE });
 
     gdt.loadKernelGDT();
@@ -81,7 +81,7 @@ export fn _start() noreturn {
     uart.UART1.enableInterrupts();
     uart.print("uart1 interrupts enabled\n", .{});
 
-    free_pages = mem.PAGE_ALLOCATOR.count_free();
+    free_pages = mem.PAGE_ALLOCATOR.countFree();
     uart.print("number of usable physical pages: {} ({} bytes)\n", .{ free_pages, free_pages * mem.PAGE_SIZE });
 
     process.scheduler();

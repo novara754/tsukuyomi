@@ -29,7 +29,7 @@ pub fn open(path: []const u8) ?File {
 
     for (FILES[0..FILE_COUNT]) |file| {
         if (file) |f| {
-            if (std.mem.eql(u8, path, f.path_slice())) {
+            if (std.mem.eql(u8, path, f.pathSlice())) {
                 return .{ .ref = f };
             }
         }

@@ -35,21 +35,21 @@ TRAPS = [
 
 def main():
     print(".section .text")
-    print(".extern handle_trap")
+    print(".extern handleTrap")
     for (i, (name, has_err_code)) in enumerate(TRAPS):
         print(f".global {name}")
         print(f"{name}:")
         if not has_err_code:
             print("\tpushq $0")
         print(f"\tpushq ${i}")
-        print("\tjmp handle_trap\n")
+        print("\tjmp handleTrap\n")
 
     for i in range(32, 256):
         print(f".global vector{i}")
         print(f"vector{i}:")
         print("\tpush $0")
         print(f"\tpush ${i}")
-        print("\tjmp handle_trap\n")
+        print("\tjmp handleTrap\n")
 
     print(".section .data")
     print(".global trap_table")

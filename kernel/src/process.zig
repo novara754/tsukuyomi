@@ -67,7 +67,7 @@ pub var PROCESSES: [MAX_NUM_PROCESSES]Process = [1]Process{Process{
 }} ** MAX_NUM_PROCESSES;
 pub var CPU_STATE = CPU{};
 
-extern fn handle_trap_ret() void;
+extern fn handleTrapRet() void;
 
 pub fn allocProcess(name: []const u8) !*Process {
     LOCK.acquire();
@@ -96,7 +96,7 @@ pub fn allocProcess(name: []const u8) !*Process {
 
     sp -= @sizeOf(u64);
     const rip: *u64 = @ptrFromInt(sp);
-    rip.* = @intFromPtr(&handle_trap_ret);
+    rip.* = @intFromPtr(&handleTrapRet);
 
     sp -= @sizeOf(Context);
     proc.context = @ptrFromInt(sp);
@@ -365,7 +365,7 @@ pub fn doExec(path: []const u8) !void {
         std.mem.copyForwards(u8, dst[0..phdr.p_memsz], src[0..phdr.p_filesz]);
     }
 
-    proc.name = limine_file.path_slice();
+    proc.name = limine_file.pathSlice();
     var tf = proc.trap_frame;
     tf.cs = gdt.SEG_USER_CODE << 3 | 0b11;
     tf.ds = gdt.SEG_USER_DATA << 3 | 0b11;

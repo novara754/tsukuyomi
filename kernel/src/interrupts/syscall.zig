@@ -21,7 +21,7 @@ const SYS_EXECVE = 59;
 const SYS_EXIT = 60;
 const SYS_WAIT = 61;
 
-pub fn do_syscall(tf: *TrapFrame) void {
+pub fn doSyscall(tf: *TrapFrame) void {
     const proc = process.CPU_STATE.process orelse {
         panic("doSyscall called without process", .{});
     };
