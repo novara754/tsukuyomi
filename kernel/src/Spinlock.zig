@@ -6,7 +6,7 @@ const Self = @This();
 
 pub fn acquire(self: *Self) void {
     while (@atomicRmw(bool, &self.locked, .Xchg, true, .acquire)) {
-        x86.spin();
+        x86.pause();
     }
 }
 
