@@ -10,8 +10,7 @@ QEMU_ARGS = \
     -drive if=pflash,format=raw,readonly=on,file=$(OVMF_VARS) \
     -drive format=raw,file=hdd.img \
     -no-reboot \
-    -nographic \
-    -serial mon:stdio
+    -serial stdio
 
 QEMU_EXTRA ?=
 

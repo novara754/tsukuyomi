@@ -40,6 +40,10 @@ export fn _start() noreturn {
         ppanic("limine modules response is null", .{});
     };
 
+    const framebuffer = limine.FRAMEBUFFER.response orelse {
+        ppanic("limine framebuffer response is null", .{});
+    };
+
     mem.init(@intCast(hhdm_response.*.offset), memory_map);
     var free_pages = mem.PAGE_ALLOCATOR.countFree();
     uart.print("number of usable physical pages: {} ({} bytes)\n", .{ free_pages, free_pages * mem.PAGE_SIZE });
@@ -84,7 +88,26 @@ export fn _start() noreturn {
     free_pages = mem.PAGE_ALLOCATOR.countFree();
     uart.print("number of usable physical pages: {} ({} bytes)\n", .{ free_pages, free_pages * mem.PAGE_SIZE });
 
-    process.scheduler();
+    uart.print("found {} framebuffers:\n", .{framebuffer.framebuffer_count});
+    for (framebuffer.framebuffers[0..framebuffer.framebuffer_count]) |fb| {
+        uart.print(" - {}x{}, {} bpp, {s}\n", .{ fb.width, fb.height, fb.bpp, @tagName(fb.memory_model) });
+    }
+
+    var fb = @import("Framebuffer.zig").fromLimine(framebuffer.framebuffers[0]);
+    for (0..fb.height) |y| {
+        for (0..fb.width) |x| {
+            const p = fb.pixel(x, y);
+            p.* = .{
+                .r = @intCast((x * 255) / fb.width),
+                .g = @intCast((y * 255) / fb.height),
+                .b = 0,
+                .a = 255,
+            };
+        }
+    }
+
+    spin();
+    // process.scheduler();
 }
 
 pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {

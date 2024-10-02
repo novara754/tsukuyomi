@@ -138,3 +138,58 @@ const ModuleRequest = extern struct {
 };
 
 pub export var MODULES linksection(".requests") = ModuleRequest{};
+
+pub const Framebuffer = extern struct {
+    address: [*]u8,
+    width: u64,
+    height: u64,
+    pitch: u64,
+    /// bits per pixel
+    bpp: u16,
+    memory_model: MemoryModel,
+    red_mask_size: u8,
+    red_mask_shift: u8,
+    green_mask_size: u8,
+    green_mask_shift: u8,
+    blue_mask_size: u8,
+    blue_mask_shift: u8,
+    unused: [7]u8,
+    edid_size: u64,
+    edid: *anyopaque,
+
+    // response revision 1
+    mode_count: u64,
+    modes: [*]const *VideoMode,
+
+    const MemoryModel = enum(u8) {
+        bgr = 1,
+    };
+
+    const VideoMode = extern struct {
+        pitch: u64,
+        width: u64,
+        height: u64,
+        bpp: u16,
+        memory_model: u8,
+        red_mask_size: u8,
+        red_mask_shift: u8,
+        green_mask_size: u8,
+        green_mask_shift: u8,
+        blue_mask_size: u8,
+        blue_mask_shift: u8,
+    };
+};
+
+const FramebufferResponse = extern struct {
+    revision: u64,
+    framebuffer_count: u64,
+    framebuffers: [*]const *Framebuffer,
+};
+
+const FramebufferRequest = extern struct {
+    id: [4]u64 = requestId(0x9d5827dcd881dd75, 0xa3148604f6fab11b),
+    revision: u64 = 0,
+    response: ?*FramebufferResponse = null,
+};
+
+pub export var FRAMEBUFFER linksection(".requests") = FramebufferRequest{ .revision = 1 };
