@@ -6,12 +6,16 @@ const spin = @import("x86.zig").spin;
 const ppanic = @import("panic.zig").panic;
 const gdt = @import("gdt.zig");
 const mem = @import("mem.zig");
+const heap = @import("heap.zig");
 const acpi = @import("acpi.zig");
 const idt = @import("interrupts/idt.zig");
 const ioapic = @import("interrupts/ioapic.zig");
 const lapic = @import("interrupts/lapic.zig");
 const process = @import("process.zig");
 const lmfs = @import("vfs/lmfs.zig");
+const psf = @import("psf.zig");
+const Terminal = @import("Terminal.zig");
+const Framebuffer = @import("Framebuffer.zig");
 
 export fn _start() noreturn {
     uart.init() catch {
@@ -47,6 +51,9 @@ export fn _start() noreturn {
     mem.init(@intCast(hhdm_response.*.offset), memory_map);
     var free_pages = mem.PAGE_ALLOCATOR.countFree();
     uart.print("number of usable physical pages: {} ({} bytes)\n", .{ free_pages, free_pages * mem.PAGE_SIZE });
+
+    heap.init();
+    uart.print("kernel heap initialized\n", .{});
 
     gdt.loadKernelGDT();
     uart.print("kernel gdt initialized\n", .{});
@@ -93,17 +100,14 @@ export fn _start() noreturn {
         uart.print(" - {}x{}, {} bpp, {s}\n", .{ fb.width, fb.height, fb.bpp, @tagName(fb.memory_model) });
     }
 
-    var fb = @import("Framebuffer.zig").fromLimine(framebuffer.framebuffers[0]);
-    for (0..fb.height) |y| {
-        for (0..fb.width) |x| {
-            const p = fb.pixel(x, y);
-            p.* = .{
-                .r = @intCast((x * 255) / fb.width),
-                .g = @intCast((y * 255) / fb.height),
-                .b = 0,
-                .a = 255,
-            };
-        }
+    const font = psf.Font.fromBytes(@embedFile("terminal-font.psf")) catch |e| {
+        ppanic("failed to load font: {}", .{e});
+    };
+    const fb = Framebuffer.fromLimine(framebuffer.framebuffers[0]);
+    var terminal = Terminal.new(fb, font);
+    terminal.puts("hello, world!\n");
+    for (0..50) |i| {
+        terminal.print("hello? {}\n", .{i});
     }
 
     spin();

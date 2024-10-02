@@ -1,2 +1,3 @@
 zig-out
 src/interrupts/traps.s
+src/terminal-font.psf

@@ -261,7 +261,7 @@ pub const Mapper = struct {
     }
 };
 
-fn isBasePageAligned(addr: u64) bool {
+pub fn isBasePageAligned(addr: u64) bool {
     return addr % PAGE_SIZE == 0;
 }
 

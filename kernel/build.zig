@@ -30,7 +30,7 @@ pub fn build(b: *std.Build) void {
         .name = "tsukuyomi",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
-        .optimize = optimize,
+        .optimize = .Debug,
         .code_model = .kernel,
         .link_libc = false,
     });
