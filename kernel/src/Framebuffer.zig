@@ -16,7 +16,7 @@ pitch: u64,
 bpp: u64,
 
 /// frame data
-present_buffer: []Pixel,
+present_buffer: []volatile Pixel,
 
 draw_buffer: []Pixel,
 
@@ -79,10 +79,14 @@ pub fn present(self: *Self, region: ?Rect) void {
         for (r.y..(r.y + r.height)) |y| {
             const start = y * self.width + r.x;
             const end = y * self.width + r.x + r.width;
-            std.mem.copyForwards(Pixel, self.present_buffer[start..end], self.draw_buffer[start..end]);
+            for (self.present_buffer[start..end], self.draw_buffer[start..end]) |*d, s| {
+                d.* = s;
+            }
         }
     } else {
-        std.mem.copyForwards(Pixel, self.present_buffer, self.draw_buffer);
+        for (self.present_buffer, self.draw_buffer) |*d, s| {
+            d.* = s;
+        }
     }
 }
 

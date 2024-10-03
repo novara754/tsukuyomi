@@ -106,7 +106,7 @@ export fn _start() noreturn {
     const fb = Framebuffer.fromLimine(framebuffer.framebuffers[0]);
     var terminal = Terminal.new(fb, font);
     terminal.puts("hello, world!\n");
-    for (0..50) |i| {
+    for (0..150) |i| {
         terminal.print("hello? {}\n", .{i});
     }
 

@@ -5,39 +5,9 @@ fn requestId(comptime first: u64, comptime second: u64) [4]u64 {
     return [4]u64{ 0xc7b1dd30df4c8b88, 0x0a82e883a194f07b, first, second };
 }
 
-pub export var BASE_REVISION linksection(".requests") = [3]u64{ 0xf9562b2d5c95a6c8, 0x6a7b384944536bdc, 2 };
-
-// fn Request(id: [2]u64, comptime RequestData: type, comptime ResponseData: type) type {
-//     const CommonResponseFields = @typeInfo(struct {
-//         revision: u64,
-//     }).@"struct".fields;
-
-//     const Response = @Type(.{
-//         .@"struct" = .{
-//             .layout = .@"packed",
-//             .backing_integer = u64,
-//             .fields = @typeInfo(ResponseData).@"struct".fields ++ CommonResponseFields,
-//             .decls = &.{},
-//             .is_tuple = false,
-//         },
-//     });
-
-//     const CommonFields = @typeInfo(struct {
-//         id: [4]u64 = request_id(id),
-//         revision: u64 = 0,
-//         response: ?*Response = null,
-//     }).@"struct".fields;
-
-//     return @Type(.{
-//         .@"struct" = .{
-//             .layout = .@"packed",
-//             .backing_integer = u64,
-//             .fields = @typeInfo(RequestData).@"struct".fields ++ CommonFields,
-//             .decls = &.{},
-//             .is_tuple = false,
-//         },
-//     });
-// }
+// pub export var BASE_REVISION linksection(".requests") = [3]u64{ 0xf9562b2d5c95a6c8, 0x6a7b384944536bdc, 2 };
+export var BASE_REVISION_INNER linksection(".requests") = [3]u64{ 0xf9562b2d5c95a6c8, 0x6a7b384944536bdc, 2 };
+pub const BASE_REVISION: *const volatile [3]u64 = &BASE_REVISION_INNER;
 
 const HHDMResponse = extern struct {
     revision: u64,
@@ -50,7 +20,8 @@ const HHDMRequest = extern struct {
     response: ?*HHDMResponse = null,
 };
 
-pub export var HHDM linksection(".requests") = HHDMRequest{};
+export var HHDM_INNER linksection(".requests") = HHDMRequest{};
+pub const HHDM: *const volatile HHDMRequest = &HHDM_INNER;
 
 pub const MemoryMapEntryType = enum(u64) {
     usable = 0,
@@ -81,7 +52,8 @@ const MemoryMapRequest = extern struct {
     response: ?*MemoryMapResponse = null,
 };
 
-pub export var MEMORY_MAP linksection(".requests") = MemoryMapRequest{};
+export var MEMORY_MAP_INNER linksection(".requests") = MemoryMapRequest{};
+pub const MEMORY_MAP: *const volatile MemoryMapRequest = &MEMORY_MAP_INNER;
 
 const RSDPResponse = extern struct {
     revision: u64,
@@ -94,7 +66,8 @@ const RSDPRequest = extern struct {
     response: ?*RSDPResponse = null,
 };
 
-pub export var RSDP linksection(".requests") = RSDPRequest{};
+pub export var RSDP_INNER linksection(".requests") = RSDPRequest{};
+pub const RSDP: *const volatile RSDPRequest = &RSDP_INNER;
 
 const UUID = extern struct {
     a: u32,
@@ -137,7 +110,8 @@ const ModuleRequest = extern struct {
     response: ?*ModuleResponse = null,
 };
 
-pub export var MODULES linksection(".requests") = ModuleRequest{};
+pub export var MODULES_INNER linksection(".requests") = ModuleRequest{};
+pub const MODULES: *const volatile ModuleRequest = &MODULES_INNER;
 
 pub const Framebuffer = extern struct {
     address: [*]u8,
@@ -192,4 +166,5 @@ const FramebufferRequest = extern struct {
     response: ?*FramebufferResponse = null,
 };
 
-pub export var FRAMEBUFFER linksection(".requests") = FramebufferRequest{ .revision = 1 };
+pub export var FRAMEBUFFER_INNER linksection(".requests") = FramebufferRequest{ .revision = 1 };
+pub const FRAMEBUFFER: *const volatile FramebufferRequest = &FRAMEBUFFER_INNER;

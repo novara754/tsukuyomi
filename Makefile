@@ -14,6 +14,10 @@ QEMU_ARGS = \
 
 QEMU_EXTRA ?=
 
+ifdef RELEASE
+ZIG_RELEASE = -Drelease=true
+endif
+
 .PHONY: all
 all: kernel
 
@@ -32,7 +36,7 @@ kernel: $(KERNEL)
 
 .PHONY: $(KERNEL)
 $(KERNEL): user kernel/src/interrupts/traps.s
-	cd kernel && zig build
+	cd kernel && zig build $(ZIG_RELEASE)
 	objdump -d -M intel $(KERNEL) > $(KERNEL).asm
 
 .PHONY: user
