@@ -1,21 +1,22 @@
 const std = @import("std");
+const lib = @import("lib.zig");
 
-const uart = @import("uart.zig");
-const limine = @import("limine.zig");
-const spin = @import("x86.zig").spin;
-const ppanic = @import("panic.zig").panic;
-const gdt = @import("gdt.zig");
-const mem = @import("mem.zig");
-const heap = @import("heap.zig");
-const acpi = @import("acpi.zig");
-const idt = @import("interrupts/idt.zig");
-const ioapic = @import("interrupts/ioapic.zig");
-const lapic = @import("interrupts/lapic.zig");
-const process = @import("process.zig");
-const lmfs = @import("vfs/lmfs.zig");
-const psf = @import("psf.zig");
-const Terminal = @import("Terminal.zig");
-const Framebuffer = @import("Framebuffer.zig");
+const uart = lib.uart;
+const limine = lib.limine;
+const spin = lib.spin;
+const ppanic = lib.ppanic;
+const gdt = lib.gdt;
+const mem = lib.mem;
+const heap = lib.heap;
+const acpi = lib.acpi;
+const idt = lib.idt;
+const ioapic = lib.ioapic;
+const lapic = lib.lapic;
+const process = lib.process;
+const lmfs = lib.lmfs;
+const psf = lib.psf;
+const Terminal = lib.Terminal;
+const Framebuffer = lib.Framebuffer;
 
 export fn _start() noreturn {
     uart.init() catch {
@@ -100,16 +101,21 @@ export fn _start() noreturn {
         uart.print(" - {}x{}, {} bpp, {s}\n", .{ fb.width, fb.height, fb.bpp, @tagName(fb.memory_model) });
     }
 
-    const font = psf.Font.fromBytes(@embedFile("terminal-font.psf")) catch |e| {
-        ppanic("failed to load font: {}", .{e});
-    };
-    const fb = Framebuffer.fromLimine(framebuffer.framebuffers[0]);
-    var terminal = Terminal.new(fb, font);
-    terminal.puts("hello, world!\n");
-    for (0..150) |i| {
-        terminal.print("hello? {}\n", .{i});
-    }
+    // const font = psf.Font.fromBytes(@embedFile("terminal-font.psf")) catch |e| {
+    //     ppanic("failed to load font: {}", .{e});
+    // };
+    // const fb = Framebuffer.fromLimine(framebuffer.framebuffers[0]);
+    // var terminal = Terminal.new(fb, font);
 
+    @import("ps2.zig").init() catch |e| {
+        ppanic("failed to initialize ps2 controller: {}", .{e});
+    };
+
+    @import("kbd.zig").init() catch |e| {
+        ppanic("kbd: {}", .{e});
+    };
+
+    asm volatile ("sti");
     spin();
     // process.scheduler();
 }

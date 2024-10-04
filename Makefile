@@ -31,13 +31,17 @@ install: $(KERNEL) hdd.img
 	sudo umount hdd_esp
 	sudo losetup --detach /dev/loop0
 
+.PHONY: kernel-test
+kernel-test:
+	cd kernel && zig build test -Dtarget=native
+
 .PHONY: kernel
 kernel: $(KERNEL)
 
 .PHONY: $(KERNEL)
 $(KERNEL): user kernel/src/interrupts/traps.s
 	cd kernel && zig build $(ZIG_RELEASE)
-	objdump -d -M intel $(KERNEL) > $(KERNEL).asm
+	objdump -dS -M intel $(KERNEL) > $(KERNEL).asm
 
 .PHONY: user
 user:

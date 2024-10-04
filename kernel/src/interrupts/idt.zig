@@ -4,6 +4,7 @@ const process = @import("../process.zig");
 const x86 = @import("../x86.zig");
 const lapic = @import("lapic.zig");
 const uart = @import("../uart.zig");
+const kbd = @import("../kbd.zig");
 
 const PRESENT: u8 = 1 << 7;
 
@@ -106,6 +107,10 @@ export fn handleTrapInner(tf: *TrapFrame) callconv(.SysV) void {
             if (process.CPU_STATE.process) |_| {
                 process.yield();
             }
+        },
+        (irq.OFFSET + irq.KBD) => {
+            kbd.handleInterrupt();
+            lapic.eoi();
         },
         (irq.OFFSET + irq.UART1) => {
             uart.UART1.handleInterrupt();
