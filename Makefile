@@ -31,6 +31,10 @@ install: $(KERNEL) hdd.img
 	sudo umount hdd_esp
 	sudo losetup --detach /dev/loop0
 
+.PHONY: docs
+docs:
+	cd kernel && zig build-lib -femit-docs=../docs -fno-emit-bin src/lib.zig
+
 .PHONY: kernel-test
 kernel-test:
 	cd kernel && zig build test -Dtarget=native

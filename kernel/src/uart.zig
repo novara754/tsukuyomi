@@ -1,3 +1,5 @@
+//! Driver for I/O port based serial ports.
+
 const std = @import("std");
 
 const x86 = @import("x86.zig");
@@ -7,15 +9,15 @@ const ioapic = @import("interrupts/ioapic.zig");
 const irq = @import("interrupts/irq.zig");
 const uartfs = @import("vfs/uartfs.zig");
 
-//// Base clock frequency
+/// Base clock frequency
 const BASE_FREQ: u32 = 115200;
 
-//// First serial port base port
+/// First serial port base port
 const UART1_BASE: u16 = 0x3F8;
 
-//// Receive/transmit register offset, RW
+/// Receive/transmit register offset, RW
 const RX_TX: u16 = 0;
-//// Interrupt enable register offset, RW
+/// Interrupt enable register offset, RW
 const INT_EN: u16 = 1;
 // /// Interrupt ID register offset, RO
 // const INT_ID: u16 = 2;
@@ -28,6 +30,7 @@ const MODEM_CTRL: u16 = 4;
 /// Line status register offset, RO
 const LINE_STATUS: u16 = 5;
 
+/// Represents a serial port.
 const Uart = struct {
     initialized: bool = false,
     base_port: u16,
@@ -35,6 +38,11 @@ const Uart = struct {
     const Self = @This();
     pub const Error = error{SelfTestFailed};
 
+    /// Initialize the serial port with the following parameters:
+    /// - clock frequency of 38400 Hz
+    /// - 8 data bits, 1 stop bit, 0 parity bits
+    /// - FIFO with 1 byte threshold
+    /// - interrupts disabled
     pub fn init(self: *Self) Error!void {
         // Disable all interrupts
         outb(self.base_port + INT_EN, 0);
@@ -57,7 +65,7 @@ const Uart = struct {
         // Set RTS/DSR and enable loopback for testing
         outb(self.base_port + MODEM_CTRL, 0x12);
 
-        // // Write arbitrary byte for testing
+        // Write arbitrary byte for testing
         outb(self.base_port + RX_TX, '!');
 
         // Try to read same byte back
@@ -71,6 +79,7 @@ const Uart = struct {
         outb(self.base_port + MODEM_CTRL, 0xF);
     }
 
+    /// Write a single byte to the serial port
     pub fn putc(self: *const Self, c: u8) void {
         var i: u8 = 0;
         while (i < 128) : (i += 1) {
@@ -82,16 +91,19 @@ const Uart = struct {
         outb(self.base_port + RX_TX, c);
     }
 
+    /// Write many bytes to the serial port
     pub fn puts(self: *const Self, s: []const u8) void {
         for (s) |c| {
             self.putc(c);
         }
     }
 
+    /// Alias for `puts`, used by `std.fmt.print`
     pub fn writeAll(self: *const Self, bytes: []const u8) Error!void {
         self.puts(bytes);
     }
 
+    /// Used by `std.fmt.print`
     pub fn writeBytesNTimes(self: *const Self, bytes: []const u8, n: usize) Error!void {
         var i: usize = 0;
         while (i < n) : (i += 1) {
@@ -99,6 +111,8 @@ const Uart = struct {
         }
     }
 
+    /// Try to read a single byte from the serial port.
+    /// Returns null if no data available.
     pub fn getc(self: *const Self) ?u8 {
         if (inb(self.base_port + LINE_STATUS) & 0x01 == 0)
             return null;
@@ -110,12 +124,14 @@ const Uart = struct {
         uartfs.put(b);
     }
 
+    /// Enable UART1 interrupt in IOAPIC
     pub fn enableInterrupts(self: *const Self) void {
         outb(self.base_port + INT_EN, 1);
         ioapic.enable(irq.UART1, 0);
     }
 };
 
+/// Represents COM1
 pub var UART1 = Uart{
     .base_port = UART1_BASE,
 };
@@ -124,6 +140,7 @@ pub fn init() !void {
     try UART1.init();
 }
 
+/// Print formatted text to UART1
 pub fn print(comptime fmt: []const u8, args: anytype) void {
     std.fmt.format(UART1, fmt, args) catch {
         x86.spin();

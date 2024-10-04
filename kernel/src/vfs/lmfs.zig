@@ -1,3 +1,8 @@
+//! Filesystem driver to interact with modules loaded by limine.
+//!
+//! Limine allows automatically loading files from disk into memory as "modules".
+//! This acts as a nice little stopgap for a custom filesystem implementation.
+
 const std = @import("std");
 const limine = @import("../limine.zig");
 const Spinlock = @import("../Spinlock.zig");
