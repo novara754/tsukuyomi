@@ -1,3 +1,5 @@
+//! Module for managing user processes.
+
 const std = @import("std");
 const TrapFrame = @import("interrupts/idt.zig").TrapFrame;
 const Spinlock = @import("Spinlock.zig");
@@ -6,10 +8,18 @@ const gdt = @import("gdt.zig");
 const vfs = @import("vfs.zig");
 const panic = @import("panic.zig").panic;
 
+/// Virtual address of bottom of user stack.
+/// User-space stacks are currently limited to 1 page.
 pub const USER_STACK_BOTTOM = 0x0000_7000_0000_0000;
 
+/// Maximum number of processes that can be allocated at the same time.
 const MAX_NUM_PROCESSES = 16;
 
+/// Important CPU state that needs to be saved for context switches.
+/// The context switch is implemented as a function call to `switchContext`
+/// (defined in switch_context.s)
+/// The SysV ABI automatically pushes most CPU registers to the stack, but these registers
+/// are not saved by default.
 const Context = struct {
     _rbx: u64 = 0,
     _rbp: u64 = 0,
@@ -29,29 +39,55 @@ pub const ProcessState = enum {
     sleeping,
 };
 
+/// Process state and metadata.
 const Process = struct {
+    /// Name of the progress for debugging purposes
     name: []const u8,
     state: ProcessState,
+    /// Unique id number
     pid: u64,
+    /// Process from which this process was forked
     parent: ?*Process,
+    /// Physical address of top-level paging table
     pml4: usize,
+    /// Virtual address of bottom of interrupt stack
     kernel_stack: [*]u8,
+    /// Trap frame which resides in kernel_stack
     trap_frame: *TrapFrame,
+    /// Saved necessary CPU state which resides in kernel_stack (for context switching)
     context: *Context,
+    /// Status code passed to exit syscall
     exit_status: u64,
+    /// Open files. File descriptors index into this array
+    /// TODO: Extract the length into a variable
     files: [16]?vfs.File,
+    /// When a process goes to sleep it sets this value to an arbitrary but sensible
+    /// value before setting their state to `.sleeping`.
+    /// Processes can be woken up by scanning the process table for processes with a matching
+    /// `wait_channel` and setting their state to `.runnable`.
+    /// The values used are typically the addresses of data structures the process tried to access
+    /// or similar.
     wait_channel: u64,
 };
 
+/// General CPU state.
 const CPU = struct {
+    /// GDT used by the CPU when a process is being executed.
     gdt: [7]u64 = .{ 0, 0, 0, 0, 0, 0, 0 },
+    /// TSS used by the CPU when a process is being executed.
     tss: gdt.TSS = .{},
+    /// CPU context for the scheduler. Whenever a context gets preempted or yields
+    /// `contextSwitch` will be used to switch to this.
     scheduler_context: *Context = undefined,
+    /// Currently active process for this CPU.
     process: ?*Process = null,
 };
 
+/// Strict monotonic rising counter for process ids.
 var NEXT_PID: u64 = 0;
+/// Lock for the process table, should be acquired before changing any process.
 var LOCK = Spinlock{};
+/// Process table.
 pub var PROCESSES: [MAX_NUM_PROCESSES]Process = [1]Process{Process{
     .state = .unused,
     .name = undefined,
@@ -65,10 +101,21 @@ pub var PROCESSES: [MAX_NUM_PROCESSES]Process = [1]Process{Process{
     .files = undefined,
     .wait_channel = undefined,
 }} ** MAX_NUM_PROCESSES;
+/// CPU state.
 pub var CPU_STATE = CPU{};
 
+/// Defined in `interrupts/handle_trap.s`. Used to jump into userspace for the first time
+/// by pretending we're returning from a fork syscall.
 extern fn handleTrapRet() void;
 
+/// Allocate a new proccess with the given name.
+/// Returns an error if no process can be allocated.
+/// Otherwise returns a pointer to the new process in the process table.
+///
+/// - Sets the state to `.embryo`
+/// - Assigns a PID
+/// - Allocates a kernel stack
+/// - Sets trapframe & context to such that it's acting like returning from a fork syscall
 pub fn allocProcess(name: []const u8) !*Process {
     LOCK.acquire();
     defer LOCK.release();
@@ -108,8 +155,15 @@ pub fn allocProcess(name: []const u8) !*Process {
     return proc;
 }
 
+/// Defined in switch_context.s
+/// Switches CPU context to `new` and stores current CPU context in `old`.
 extern fn switchContext(old: **Context, new: *Context) callconv(.SysV) void;
 
+/// The scheduler activates interrupts and enters an infinite loop.
+/// Traverses the process table to find a runnable process and runs it until it yields
+/// or gets preempted, then moves onto the next process.
+///
+/// Basic round-robin scheduler.
 pub fn scheduler() noreturn {
     while (true) {
         asm volatile ("sti");
@@ -134,6 +188,8 @@ pub fn scheduler() noreturn {
     }
 }
 
+/// Stop running the current process and switch back to scheduler.
+/// Does not exit process.
 pub fn yield() void {
     var proc = CPU_STATE.process orelse {
         panic("yield was called without an active process", .{});
@@ -145,6 +201,9 @@ pub fn yield() void {
     LOCK.release();
 }
 
+/// Creates an exact copy of the active process and sets it as `.runnable`.
+/// Copies all the user memory and page tables so that the processes are independent.
+/// This is the main logic for the fork syscall.
 pub fn doFork() !u64 {
     const this_proc = CPU_STATE.process orelse {
         panic("doFork was called without an active process", .{});
@@ -232,10 +291,16 @@ pub fn doFork() !u64 {
     return new_proc.pid;
 }
 
+/// Mimics the return path of the fork syscall.
+/// Used for the initial launch into userspace.
 fn forkRet() void {
     LOCK.release();
 }
 
+/// Exits the current process and set its exit code.
+/// The memory for a process isn't immediately reclaimed, instead it enters a `.zombie` state.
+/// This way the parent process can reap it later and read its exit code.
+/// This is the main logic for the exit syscall.
 pub fn doExit(status: u64) noreturn {
     var proc = CPU_STATE.process orelse {
         panic("doExit was called without an active process", .{});
@@ -251,6 +316,8 @@ pub fn doExit(status: u64) noreturn {
     panic("switchContext returned to doExit", .{});
 }
 
+/// Allocate a new file descriptor for the current process and associate it with
+/// the given file handle.
 pub fn addOpenFile(proc: *Process, file: vfs.File) !u64 {
     for (&proc.files, 0..) |*open_file, i| {
         if (open_file.* == null) {
@@ -261,6 +328,9 @@ pub fn addOpenFile(proc: *Process, file: vfs.File) !u64 {
     return error.TooManyOpenFiles;
 }
 
+/// Sleep on a `wait_channel`, waiting for the corresponding `awaken` call.
+/// The given `lock` will be released inside this function. Once the process is woken back up
+/// the function will return with `lock` already acquired.
 pub fn sleep(wait_channel: u64, lock: *Spinlock) void {
     var proc = CPU_STATE.process orelse {
         panic("sleep was called without an active process", .{});
@@ -282,6 +352,8 @@ pub fn sleep(wait_channel: u64, lock: *Spinlock) void {
     }
 }
 
+/// Acquire the process table lock and awaken all processes wait the given `wait_channel`,
+/// setting their states to `.runnable`.
 pub fn awaken(wait_channel: u64) void {
     LOCK.acquire();
     defer LOCK.release();
@@ -289,6 +361,8 @@ pub fn awaken(wait_channel: u64) void {
     awakenWithLock(wait_channel);
 }
 
+/// Awaken all processes wait the given `wait_channel`, setting their states to `.runnable`.
+/// Requires the process table lock to be acquired already.
 pub fn awakenWithLock(wait_channel: u64) void {
     for (&PROCESSES) |*proc| {
         if (proc.state == ProcessState.sleeping and proc.wait_channel == wait_channel) {
@@ -297,6 +371,9 @@ pub fn awakenWithLock(wait_channel: u64) void {
     }
 }
 
+/// Causes the current process to wait for a child process to exit.
+/// If no child processes exist this will return immediately.
+/// If child processes exist but none have exited the process will go to sleep.
 pub fn wait() u64 {
     const proc = CPU_STATE.process orelse {
         panic("sleep was called without an active process", .{});
@@ -316,7 +393,7 @@ pub fn wait() u64 {
                 continue;
             }
 
-            // todo: free p's memory
+            // TODO: free p's memory
             p.state = ProcessState.unused;
             LOCK.release();
             return p.pid;
@@ -331,6 +408,8 @@ pub fn wait() u64 {
     return ~@as(u64, 0);
 }
 
+/// Load a new program image and replace the current one.
+/// This is the main logic for the exec syscall.
 pub fn doExec(path: []const u8) !void {
     const proc = CPU_STATE.process orelse {
         panic("exec was called without an active process", .{});
