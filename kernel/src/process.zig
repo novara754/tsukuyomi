@@ -6,6 +6,7 @@ const Spinlock = @import("Spinlock.zig");
 const mem = @import("mem.zig");
 const gdt = @import("gdt.zig");
 const vfs = @import("vfs.zig");
+const x86 = @import("x86.zig");
 const panic = @import("panic.zig").panic;
 
 /// Virtual address of bottom of user stack.
@@ -166,7 +167,7 @@ extern fn switchContext(old: **Context, new: *Context) callconv(.SysV) void;
 /// Basic round-robin scheduler.
 pub fn scheduler() noreturn {
     while (true) {
-        asm volatile ("sti");
+        x86.sti();
 
         LOCK.acquire();
         for (&PROCESSES) |*proc| {
@@ -347,8 +348,8 @@ pub fn sleep(wait_channel: u64, lock: *Spinlock) void {
     proc.wait_channel = 0;
 
     if (lock != &LOCK) {
-        lock.acquire();
         LOCK.release();
+        lock.acquire();
     }
 }
 
@@ -420,7 +421,7 @@ pub fn doExec(path: []const u8) !void {
     const file = vfs.open(path) orelse return error.NoSuchFile;
     const limine_file = switch (file) {
         .limine => |f| f.ref,
-        .uart => return error.NoSuchFile,
+        .tty => return error.NoSuchFile,
     };
 
     var mapper = mem.Mapper.forCurrentPML4();

@@ -108,7 +108,6 @@ export fn _start() noreturn {
     };
     const fb = Framebuffer.fromLimine(framebuffer.framebuffers[0]);
     Terminal.init(fb, font);
-    Terminal.SINGLETON.?.putc('x');
 
     ps2.init() catch |e| {
         ppanic("failed to initialize ps2 controller: {}", .{e});
@@ -118,9 +117,9 @@ export fn _start() noreturn {
         ppanic("kbd: {}", .{e});
     };
 
-    asm volatile ("sti");
-    spin();
-    // process.scheduler();
+    // asm volatile ("sti");
+    // spin();
+    process.scheduler();
 }
 
 pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {

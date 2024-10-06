@@ -123,6 +123,17 @@ fn putcInner(self: *Self, c: u8) void {
         return;
     }
 
+    // '\b'
+    if (c == 8) {
+        if (self.cursor_pos.x == 0 and self.cursor_pos.y > 0) {
+            self.cursor_pos.x = self.width;
+            self.cursor_pos.y -= 1;
+        } else {
+            self.cursor_pos.x -= 1;
+        }
+        return;
+    }
+
     const glyph = self.font.glyph(c) orelse self.fallback_glyph;
 
     for (glyph, 0..) |row_bits, row_idx| {

@@ -7,7 +7,6 @@ const outb = x86.outb;
 const inb = x86.inb;
 const ioapic = @import("interrupts/ioapic.zig");
 const irq = @import("interrupts/irq.zig");
-const uartfs = @import("vfs/uartfs.zig");
 
 /// Base clock frequency
 const BASE_FREQ: u32 = 115200;
@@ -120,8 +119,7 @@ const Uart = struct {
     }
 
     pub fn handleInterrupt(self: *const Self) void {
-        const b = self.getc() orelse return;
-        uartfs.put(b);
+        _ = self.getc();
     }
 
     /// Enable UART1 interrupt in IOAPIC

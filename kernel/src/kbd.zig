@@ -4,6 +4,7 @@
 //! There are different sets of scan codes, i.e. different ways to encode the same keys
 //! being pressed or released. By default scan code set 2 is enabled, which is the only one
 //! this driver uses.
+const std = @import("std");
 const ps2 = @import("ps2.zig");
 const uart = @import("uart.zig");
 const ioapic = @import("interrupts/ioapic.zig");
@@ -154,9 +155,11 @@ const KeyCode = enum(u8) {
     x = 'x',
     y = 'y',
     z = 'z',
+    slash = '/',
     enter = '\n',
     space = ' ',
     shift,
+    backspace = 8, // '\b'
 };
 
 const KeyAction = enum {
@@ -207,9 +210,11 @@ fn getKeyCode(scanCode: u8, extended: bool) ?KeyCode {
             0x22 => .x,
             0x35 => .y,
             0x1a => .z,
+            0x4a => .slash,
             0x12 => .shift,
             0x5a => .enter,
             0x29 => .space,
+            0x66 => .backspace,
             else => null,
         };
     }
@@ -221,15 +226,13 @@ fn handleEvent(event: KeyEvent) void {
         var shiftHeld: bool = false;
     };
 
-    const term = &(Terminal.SINGLETON orelse return);
-
     if (event.key == .shift) {
         state.shiftHeld = event.action == .down;
     } else if (event.action == .down) {
         var c = @intFromEnum(event.key);
-        if (state.shiftHeld) {
+        if (state.shiftHeld and std.ascii.isAlphabetic(c)) {
             c &= ~@as(u8, 0x20);
         }
-        term.putc(c);
+        @import("vfs/tty.zig").put(c);
     }
 }

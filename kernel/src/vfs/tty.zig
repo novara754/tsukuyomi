@@ -1,7 +1,7 @@
 const std = @import("std");
 const Spinlock = @import("../Spinlock.zig");
 const process = @import("../process.zig");
-const uart = @import("../uart.zig");
+const Terminal = @import("../Terminal.zig");
 
 const RingBuffer = struct {
     data: [512]u8 = undefined,
@@ -77,25 +77,25 @@ pub fn put(b: u8) void {
     LOCK.acquire();
     defer LOCK.release();
 
-    if (b == '\r') {
-        // \r = enter
+    const term = &(Terminal.SINGLETON orelse return);
+
+    if (b == '\n') {
         BUFFER.put('\n');
         BUFFER.commit();
 
-        uart.UART1.putc('\r');
-        uart.UART1.putc('\n');
+        term.putc('\n');
 
         process.awaken(@intFromPtr(&BUFFER));
-    } else if (b == '\x7f') {
-        // \x7f = backspace
+    } else if (b == 8) {
+        // 8 = backspace
         if (BUFFER.back()) {
-            uart.UART1.putc(8);
-            uart.UART1.putc(' ');
-            uart.UART1.putc(8);
+            term.putc(8);
+            term.putc(' ');
+            term.putc(8);
         }
     } else {
         BUFFER.put(b);
-        uart.UART1.putc(b);
+        term.putc(b);
     }
 }
 
@@ -116,6 +116,10 @@ pub fn read(dst: []u8) u64 {
 }
 
 pub fn write(src: []const u8) u64 {
-    uart.UART1.puts(src);
-    return src.len;
+    if (Terminal.SINGLETON) |*term| {
+        term.puts(src);
+        return src.len;
+    } else {
+        return ~@as(u64, 0);
+    }
 }

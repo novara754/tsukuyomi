@@ -72,3 +72,26 @@ pub fn writeCR3(
         : [rax] "{rax}" (cr3),
     );
 }
+
+/// Enable interrupts
+pub fn sti() void {
+    asm volatile ("sti");
+}
+
+/// Disable interrupts
+pub fn cli() void {
+    asm volatile ("cli");
+}
+
+/// Check if interrupts are enabled
+pub fn interruptsEnabled() bool {
+    const enabled = asm volatile (
+        \\pushf
+        \\pop %rax
+        \\and $(1 << 9), %rax
+        : [ret] "={rax}" (-> u64),
+        :
+        : "{rax}"
+    );
+    return enabled != 0;
+}
