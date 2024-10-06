@@ -38,9 +38,9 @@ pub const Font = struct {
         const has_unicode_table = mode & 0b110 != 0;
         const glyph_height = data[3];
 
-        if (has_unicode_table) {
-            return error.UnicodeTable;
-        }
+        // if (has_unicode_table) {
+        //     return error.UnicodeTable;
+        // }
 
         return .{
             .glyphs_count = glyphs_count,

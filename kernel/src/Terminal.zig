@@ -26,6 +26,11 @@ const Self = @This();
 /// Position struct for the cursor position
 const Position = struct { x: u64, y: u64 };
 
+/// Initialize the Terminal `SINGLETON`
+pub fn init(fb: Framebuffer, font: psf.Font) void {
+    SINGLETON = Self.new(fb, font);
+}
+
 /// Construct a terminal for the given framebuffer and the given font.
 /// Uses the glyph for `?` as the fallback glyph.
 pub fn new(fb: Framebuffer, font: psf.Font) Self {
@@ -195,3 +200,5 @@ const Writer = struct {
         }
     }
 };
+
+pub var SINGLETON: ?Self = null;

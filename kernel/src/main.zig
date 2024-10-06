@@ -17,6 +17,8 @@ const lmfs = lib.lmfs;
 const psf = lib.psf;
 const Terminal = lib.Terminal;
 const Framebuffer = lib.Framebuffer;
+const ps2 = lib.ps2;
+const kbd = lib.kbd;
 
 export fn _start() noreturn {
     uart.init() catch {
@@ -101,17 +103,18 @@ export fn _start() noreturn {
         uart.print(" - {}x{}, {} bpp, {s}\n", .{ fb.width, fb.height, fb.bpp, @tagName(fb.memory_model) });
     }
 
-    // const font = psf.Font.fromBytes(@embedFile("terminal-font.psf")) catch |e| {
-    //     ppanic("failed to load font: {}", .{e});
-    // };
-    // const fb = Framebuffer.fromLimine(framebuffer.framebuffers[0]);
-    // var terminal = Terminal.new(fb, font);
+    const font = psf.Font.fromBytes(@embedFile("terminal-font.psf")) catch |e| {
+        ppanic("failed to load font: {}", .{e});
+    };
+    const fb = Framebuffer.fromLimine(framebuffer.framebuffers[0]);
+    Terminal.init(fb, font);
+    Terminal.SINGLETON.?.putc('x');
 
-    @import("ps2.zig").init() catch |e| {
+    ps2.init() catch |e| {
         ppanic("failed to initialize ps2 controller: {}", .{e});
     };
 
-    @import("kbd.zig").init() catch |e| {
+    kbd.init() catch |e| {
         ppanic("kbd: {}", .{e});
     };
 
