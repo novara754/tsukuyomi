@@ -69,6 +69,7 @@ pub fn puts(self: *Self, s: []const u8) void {
 
     // ...and record the new line position...
     const end_y = self.cursor_pos.y;
+    const height = @max(1, end_y - start_y);
 
     // ..., then tell the framebuffer to present the part draw buffer
     // in that range.
@@ -78,7 +79,7 @@ pub fn puts(self: *Self, s: []const u8) void {
         .x = 0,
         .y = start_y * self.font.glyph_height,
         .width = self.framebuffer.width,
-        .height = (end_y - start_y) * self.font.glyph_height,
+        .height = height * self.font.glyph_height,
     });
 }
 
