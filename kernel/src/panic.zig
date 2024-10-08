@@ -1,9 +1,9 @@
 const spin = @import("x86.zig").spin;
-const uart = @import("uart.zig");
+const logger = @import("logger.zig");
 
 /// Print a formatted message to UART1 and hang.
 pub fn panic(comptime fmt: []const u8, args: anytype) noreturn {
     asm volatile ("cli");
-    uart.print("PANIC: " ++ fmt ++ "\n", args);
+    logger.log(.err, "kernel", "panic: " ++ fmt ++ "\n", args);
     spin();
 }

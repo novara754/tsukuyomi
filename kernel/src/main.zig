@@ -19,12 +19,15 @@ const Terminal = lib.Terminal;
 const Framebuffer = lib.Framebuffer;
 const ps2 = lib.ps2;
 const kbd = lib.kbd;
+const logger = lib.logger;
 
 export fn _start() noreturn {
+    // logger.configure(.{ .maxLevel = .info, .dimInfo = false });
+
     uart.init() catch {
         spin();
     };
-    uart.print("uart initialized\n", .{});
+    logger.log(.info, "uart", "initialized", .{});
 
     if (limine.BASE_REVISION[2] != 0) {
         ppanic("limine base revision has unexpected value ({})", .{limine.BASE_REVISION[2]});
@@ -33,7 +36,7 @@ export fn _start() noreturn {
     const hhdm_response = limine.HHDM.response orelse {
         ppanic("limine hhdm response is null", .{});
     };
-    uart.print("hhdm offset: {x}\n", .{hhdm_response.*.offset});
+    logger.log(.debug, "limine", "hhdm offset: {x}", .{hhdm_response.*.offset});
 
     const memory_map = limine.MEMORY_MAP.response orelse {
         ppanic("limine memory map response is null", .{});
@@ -53,38 +56,38 @@ export fn _start() noreturn {
 
     mem.init(@intCast(hhdm_response.*.offset), memory_map);
     var free_pages = mem.PAGE_ALLOCATOR.countFree();
-    uart.print("number of usable physical pages: {} ({} bytes)\n", .{ free_pages, free_pages * mem.PAGE_SIZE });
+    logger.log(.debug, "mem", "number of usable physical pages: {} ({} bytes)", .{ free_pages, free_pages * mem.PAGE_SIZE });
 
     heap.init();
-    uart.print("kernel heap initialized\n", .{});
+    logger.log(.info, "kheap", "initialized", .{});
 
     gdt.loadKernelGDT();
-    uart.print("kernel gdt initialized\n", .{});
+    logger.log(.info, "gdt", "kernel gdt loaded", .{});
 
     idt.init();
-    uart.print("idt initialized\n", .{});
+    logger.log(.info, "idt", "initialized", .{});
 
     const acpi_data = acpi.init(rsdp.rsdp_addr) catch |e| {
         ppanic("failed to parse acpi tables: {}", .{e});
     };
-    uart.print("acpi_data = {}\n", .{acpi_data});
+    logger.log(.debug, "acpi", "acpi_data = {}", .{acpi_data});
 
     ioapic.init(acpi_data.madt.ioapic_base);
-    uart.print("ioapic initialized\n", .{});
+    logger.log(.info, "ioapic", "initialized", .{});
 
     lapic.init(acpi_data.madt.lapic_base);
-    uart.print("lapic initialized\n", .{});
+    logger.log(.info, "lapic", "initialized", .{});
 
-    uart.print("modules loaded:\n", .{});
+    logger.log(.debug, "limine", "modules loaded:", .{});
     for (modules.modules, 0..modules.module_count) |m, i| {
-        uart.print(" {}. {s}, at={*}, size={}\n", .{ i, m.path, m.address, m.size });
+        logger.log(.debug, "limine", "{}. {s}, at={*}, size={}", .{ i, m.path, m.address, m.size });
         lmfs.registerFile(m) catch |e| {
             ppanic("registerFile: {}", .{e});
         };
     }
 
     if (lmfs.open("//usr/sh")) |file| {
-        uart.print("making proc for //usr/sh...\n", .{});
+        logger.log(.debug, "proc", "making proc for //usr/sh...", .{});
         procFromFile(file.ref, "sh") catch |e| {
             ppanic("procFromFile: {}", .{e});
         };
@@ -93,14 +96,14 @@ export fn _start() noreturn {
     }
 
     uart.UART1.enableInterrupts();
-    uart.print("uart1 interrupts enabled\n", .{});
+    logger.log(.debug, "uart", "interrupts enabled for uart1", .{});
 
     free_pages = mem.PAGE_ALLOCATOR.countFree();
-    uart.print("number of usable physical pages: {} ({} bytes)\n", .{ free_pages, free_pages * mem.PAGE_SIZE });
+    logger.log(.debug, "mem", "number of usable physical pages: {} ({} bytes)", .{ free_pages, free_pages * mem.PAGE_SIZE });
 
-    uart.print("found {} framebuffers:\n", .{framebuffer.framebuffer_count});
+    logger.log(.debug, "limine", "found {} framebuffers", .{framebuffer.framebuffer_count});
     for (framebuffer.framebuffers[0..framebuffer.framebuffer_count]) |fb| {
-        uart.print(" - {}x{}, {} bpp, {s}\n", .{ fb.width, fb.height, fb.bpp, @tagName(fb.memory_model) });
+        logger.log(.debug, "limine", " - {}x{}, {} bpp, {s}", .{ fb.width, fb.height, fb.bpp, @tagName(fb.memory_model) });
     }
 
     const font = psf.Font.fromBytes(@embedFile("terminal-font.psf")) catch |e| {
@@ -112,13 +115,14 @@ export fn _start() noreturn {
     ps2.init() catch |e| {
         ppanic("failed to initialize ps2 controller: {}", .{e});
     };
+    logger.log(.info, "ps2", "initialized", .{});
 
     kbd.init() catch |e| {
         ppanic("kbd: {}", .{e});
     };
+    logger.log(.info, "kbd", "initialized", .{});
 
-    // asm volatile ("sti");
-    // spin();
+    logger.log(.info, "proc", "entering scheduler...", .{});
     process.scheduler();
 }
 

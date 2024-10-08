@@ -18,6 +18,7 @@
 //! See also: https://wiki.osdev.org/%228042%22_PS/2_Controller
 
 const x86 = @import("x86.zig");
+const logger = @import("logger.zig");
 
 /// Number of attempts to use when reading data before timing out
 const NUM_ATTEMPTS = 100;
@@ -280,7 +281,7 @@ pub fn init() !void {
             port1_status = .initialized;
             port1_device = device;
         } else |e| {
-            @import("uart.zig").print("failed to initialized device on port 1: {}\n", .{e});
+            logger.log(.warn, "ps2", "failed to initialize device on port 1: {}", .{e});
             port1_status = .no_device;
         }
     }
@@ -293,15 +294,18 @@ pub fn init() !void {
             port2_status = .initialized;
             port2_device = device;
         } else |e| {
-            @import("uart.zig").print("failed to initialized device on port 2: {}\n", .{e});
+            logger.log(.warn, "ps2", "failed to initialize device on port 2: {}", .{e});
             port2_status = .no_device;
         }
     }
     // TODO: also enable IRQs here in the future
 
-    @import("uart.zig").print("port 1: {}, {?}\nport 2: {}, {?}\n", .{
+    logger.log(.debug, "ps2", "port 1: {}, {?}", .{
         port1_status,
         port1_device,
+    });
+
+    logger.log(.debug, "ps2", "port 2: {}, {?}", .{
         port2_status,
         port2_device,
     });
