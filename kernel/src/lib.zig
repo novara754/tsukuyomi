@@ -17,6 +17,7 @@ pub const Framebuffer = @import("Framebuffer.zig");
 pub const ps2 = @import("ps2.zig");
 pub const kbd = @import("kbd.zig");
 pub const logger = @import("logger.zig");
+pub const ata = @import("ata.zig");
 
 test {
     _ = acpi;

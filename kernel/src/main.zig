@@ -20,6 +20,7 @@ const Framebuffer = lib.Framebuffer;
 const ps2 = lib.ps2;
 const kbd = lib.kbd;
 const logger = lib.logger;
+const ata = lib.ata;
 
 export fn _start() noreturn {
     // logger.configure(.{ .maxLevel = .info, .dimInfo = false });
@@ -121,6 +122,17 @@ export fn _start() noreturn {
         ppanic("kbd: {}", .{e});
     };
     logger.log(.info, "kbd", "initialized", .{});
+
+    ata.ATA0.init(.primary) catch {};
+    ata.ATA0.init(.secondary) catch {};
+    ata.ATA1.init(.primary) catch {};
+    ata.ATA1.init(.secondary) catch {};
+
+    const buf = ata.ATA0.read_sectors(.primary, 1, 1, heap.allocator()) catch |e| {
+        ppanic("{}", .{e});
+    };
+    logger.log(.debug, "main", "buf[0..8] = {x}", .{buf[0..8]});
+    heap.allocator().free(buf);
 
     logger.log(.info, "proc", "entering scheduler...", .{});
     process.scheduler();

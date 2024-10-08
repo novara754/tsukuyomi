@@ -10,10 +10,18 @@ pub fn outb(port: u16, data: u8) void {
     );
 }
 
-/// Write a byte of data to the given I/O port.
+/// Read a byte of data from the given I/O port.
 pub fn inb(port: u16) u8 {
     return asm volatile ("inb %dx, %al"
         : [ret] "={al}" (-> u8),
+        : [port] "{dx}" (port),
+    );
+}
+
+/// Read 16 bits of data from the given I/O port.
+pub fn inw(port: u16) u16 {
+    return asm volatile ("inw %dx, %ax"
+        : [ret] "={ax}" (-> u16),
         : [port] "{dx}" (port),
     );
 }
