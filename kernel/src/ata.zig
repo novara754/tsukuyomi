@@ -132,8 +132,29 @@ const DriveMetadata = struct {
     logical_sector_size: u32 = 512,
 };
 
+/// The BlockDevice struct wraps around an ATA bus
+/// and represents a singular ATA drive. It is used to provide
+/// a common interface for other systems which operate on block devices.
+/// I.e. in the future other block device drivers will provide a struct with the same
+/// set of functions which can then be passed around in an agnostic manner.
+pub const BlockDevice = struct {
+    bus: *Bus,
+    drive: DriveE,
+
+    const Self = @This();
+
+    pub fn getBlockSize(self: Self) usize {
+        const size = self.bus.drives[@intFromEnum(self.drive)].?.logical_sector_size;
+        return @intCast(size);
+    }
+
+    pub fn readBlocks(self: Self, start: u32, count: u8, buf: []u8) !void {
+        return self.bus.readSectors(self.drive, start, count, buf);
+    }
+};
+
 /// Handle to an ATA bus.
-const Bus = struct {
+pub const Bus = struct {
     which: BusE,
     io_base: u16,
     ctrl_base: u16,
@@ -162,7 +183,7 @@ const Bus = struct {
 
         var status: StatusRegister = @bitCast(status_raw);
         while (status.bsy) {
-            status = self.read_status();
+            status = self.readStatus();
         }
 
         if (x86.inb(self.io_base + IORegisters.lba_mid1) != 0 or x86.inb(self.io_base + IORegisters.lba_mid2) != 0) {
@@ -171,11 +192,11 @@ const Bus = struct {
         }
 
         while (!status.drq and !status.err) {
-            status = self.read_status();
+            status = self.readStatus();
         }
 
         if (status.err) {
-            const err = self.read_error();
+            const err = self.readError();
             logger.log(.err, "ata", "ATA{}#{}: err = {}", .{ @intFromEnum(self.which), @intFromEnum(drive), err });
         }
 
@@ -206,22 +227,23 @@ const Bus = struct {
             .logical_sector_count = logical_sector_count,
             .logical_sector_size = logical_sector_size,
         };
+    }
 
-        logger.log(.info, "ata", "ATA{}#{}: initialized", .{ @intFromEnum(self.which), @intFromEnum(drive) });
-        logger.log(.debug, "ata", "ATA{}#{}: logical sector count = {}, logical sector size = {}, capacity in bytes = {}", .{
-            @intFromEnum(self.which),
-            @intFromEnum(drive),
-            logical_sector_count,
-            logical_sector_size,
-            logical_sector_count * logical_sector_size,
-        });
+    /// Check if the given drive has been successfully initialized
+    pub fn valid(self: *const Self, drive: DriveE) bool {
+        return self.drives[@intFromEnum(drive)] != null;
     }
 
     /// Read `count` logical sectors starting at `lba` from `drive`
-    pub fn read_sectors(self: *Self, drive: DriveE, lba: u32, count: u8, allocator: std.mem.Allocator) ![]u8 {
+    pub fn readSectors(self: *Self, drive: DriveE, lba: u32, count: u8, buf: []u8) !void {
         const drive_metadata = self.drives[@intFromEnum(drive)] orelse {
             return error.NotInitialized;
         };
+
+        const num_bytes = drive_metadata.logical_sector_size * count;
+        if (buf.len < num_bytes) {
+            return error.BufferTooSmall;
+        }
 
         const lba_hi = (lba >> 24) & 0xF;
         const lba_mid2 = (lba >> 16) & 0xFF;
@@ -234,35 +256,57 @@ const Bus = struct {
         };
 
         x86.outb(self.io_base + IORegisters.drive_sel, @bitCast(drive_sel));
+        for (0..20) |_| x86.outb(0x1f1, 0); // waste some time
+        x86.outb(self.io_base + IORegisters.sector_count, count);
         x86.outb(self.io_base + IORegisters.lba_mid2, @intCast(lba_mid2));
         x86.outb(self.io_base + IORegisters.lba_mid1, @intCast(lba_mid1));
         x86.outb(self.io_base + IORegisters.lba_lo, @intCast(lba_lo));
-        x86.outb(self.io_base + IORegisters.sector_count, count);
 
         x86.outb(self.io_base + IORegisters.status_cmd, Commands.read);
 
-        var status: StatusRegister = self.read_status();
-        while (!status.drq) {
-            status = self.read_status();
-        }
+        var k: usize = 0;
+        while (k < count) : (k += 1) {
+            var status: StatusRegister = self.readStatus();
+            while (status.bsy) {
+                status = self.readStatus();
+            }
 
-        const num_bytes = drive_metadata.logical_sector_size * count;
-        var buf = try allocator.alloc(u8, num_bytes);
-        var i: usize = 0;
-        while (i < num_bytes) : (i += 2) {
-            const word = x86.inw(self.io_base + IORegisters.data);
-            buf[i + 0] = @intCast(word & 0xFF);
-            buf[i + 1] = @intCast(word >> 8);
+            if (status.err) {
+                logger.log(.err, "ata", "read failed: {}", .{self.readError()});
+                return error.ReadError;
+            }
+
+            if (!status.drq) {
+                logger.log(.err, "ata", "read: bsy cleared, but err and drq also cleared", .{});
+                return error.ErrAndDrqClear;
+            }
+
+            var i: usize = 0;
+            while (i < drive_metadata.logical_sector_size) : (i += 2) {
+                const word = x86.inw(self.io_base + IORegisters.data);
+                buf[k * drive_metadata.logical_sector_size + i + 0] = @intCast(word & 0xFF);
+                buf[k * drive_metadata.logical_sector_size + i + 1] = @intCast(word >> 8);
+            }
+
+            for (0..15) |_| {
+                _ = self.readStatus();
+            }
         }
-        return buf;
     }
 
-    fn read_status(self: *Self) StatusRegister {
-        return @bitCast(x86.inb(self.io_base + IORegisters.status_cmd));
+    fn readStatus(self: *Self) StatusRegister {
+        return @bitCast(x86.inb(self.ctrl_base + CtrlRegisters.status_ctrl));
     }
 
-    fn read_error(self: *Self) ErrorRegister {
+    fn readError(self: *Self) ErrorRegister {
         return @bitCast(x86.inb(self.io_base + IORegisters.err_feat));
+    }
+
+    pub fn getBlockDevice(self: *Self, drive: DriveE) BlockDevice {
+        return .{
+            .bus = self,
+            .drive = drive,
+        };
     }
 };
 

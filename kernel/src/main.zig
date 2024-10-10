@@ -21,6 +21,8 @@ const ps2 = lib.ps2;
 const kbd = lib.kbd;
 const logger = lib.logger;
 const ata = lib.ata;
+const gpt = lib.gpt;
+const fat16 = lib.fat16;
 
 export fn _start() noreturn {
     // logger.configure(.{ .maxLevel = .info, .dimInfo = false });
@@ -71,7 +73,6 @@ export fn _start() noreturn {
     const acpi_data = acpi.init(rsdp.rsdp_addr) catch |e| {
         ppanic("failed to parse acpi tables: {}", .{e});
     };
-    logger.log(.debug, "acpi", "acpi_data = {}", .{acpi_data});
 
     ioapic.init(acpi_data.madt.ioapic_base);
     logger.log(.info, "ioapic", "initialized", .{});
@@ -128,11 +129,70 @@ export fn _start() noreturn {
     ata.ATA1.init(.primary) catch {};
     ata.ATA1.init(.secondary) catch {};
 
-    const buf = ata.ATA0.read_sectors(.primary, 1, 1, heap.allocator()) catch |e| {
+    if (!ata.ATA0.valid(.primary)) {
+        ppanic("ata0 #0 not accessible", .{});
+    }
+
+    const buf = heap.allocator().alignedAlloc(u8, @alignOf(gpt.TableHeader), 512) catch |e| {
+        ppanic("failed to allocate buf: {}", .{e});
+    };
+    defer heap.allocator().free(buf);
+
+    ata.ATA0.readSectors(.primary, 1, 1, buf) catch |e| {
         ppanic("{}", .{e});
     };
-    logger.log(.debug, "main", "buf[0..8] = {x}", .{buf[0..8]});
-    heap.allocator().free(buf);
+    const header: gpt.TableHeader = std.mem.bytesToValue(gpt.TableHeader, buf);
+    if (!header.verify()) {
+        ppanic("invalid hpt header", .{});
+    }
+
+    logger.log(.info, "main", "found gpt table on ata0 #0", .{});
+
+    const partitions = gpt.readPartitions(&header, ata.ATA0.getBlockDevice(.primary), heap.allocator()) catch |e| {
+        ppanic("failed to read partitions: {}", .{e});
+    };
+    defer partitions.deinit();
+
+    const part = gpt.PartitionBlockDevice(ata.BlockDevice){
+        .inner = ata.ATA0.getBlockDevice(.primary),
+        .layout = partitions.items[0],
+    };
+
+    {
+        const ebpb = fat16.readEBPB(part, heap.allocator()) catch |e| {
+            ppanic("failed to read ebpb: {}", .{e});
+        };
+        defer heap.allocator().destroy(ebpb);
+
+        const fat = fat16.readFAT(ebpb, part, heap.allocator()) catch |e| {
+            ppanic("failed to read fat: {}", .{e});
+        };
+        defer heap.allocator().free(fat);
+
+        const root_dir = fat16.readRootDir(ebpb, part, heap.allocator()) catch |e| {
+            ppanic("failed to read root_dir: {}", .{e});
+        };
+        defer heap.allocator().free(root_dir);
+        for (root_dir[0..10], 0..) |entry, i| {
+            if (entry.valid() and entry.attributes != fat16.DirEntryAttribute.vfat) {
+                if (entry.extension().len > 0) {
+                    logger.log(.debug, "main", "{}. {s}.{s}", .{ i, entry.filename(), entry.extension() });
+                } else {
+                    logger.log(.debug, "main", "{}. {s}", .{ i, entry.filename() });
+                }
+            }
+        }
+
+        const dir_entry = fat16.findFile("/EFI/BOOT/BOOTX64.EFI", ebpb, part, heap.allocator()) catch |e| {
+            ppanic("failed to find file: {}", .{e});
+        };
+        logger.log(.debug, "main", "entry = {}", .{dir_entry});
+        if (dir_entry.extension().len > 0) {
+            logger.log(.debug, "main", "{s}.{s}", .{ dir_entry.filename(), dir_entry.extension() });
+        } else {
+            logger.log(.debug, "main", "{s}", .{dir_entry.filename()});
+        }
+    }
 
     logger.log(.info, "proc", "entering scheduler...", .{});
     process.scheduler();
