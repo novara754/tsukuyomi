@@ -434,6 +434,7 @@ pub fn doExec(path: []const u8) !void {
     const limine_file = switch (file) {
         .limine => |f| f.ref,
         .tty => return error.NoSuchFile,
+        .fat16 => return error.NoSuchFile,
     };
 
     var mapper = mem.Mapper.forCurrentPML4();

@@ -17,6 +17,9 @@
 const std = @import("std");
 const lmfs = @import("vfs/lmfs.zig");
 const tty = @import("vfs/tty.zig");
+const fat16 = @import("vfs/fat16.zig");
+const gpt = @import("fs/gpt.zig");
+const ata = @import("ata.zig");
 
 /// Enumeration of available filesystem drivers.
 /// This is used as the discriminant for the `File` type which is a union
@@ -24,6 +27,7 @@ const tty = @import("vfs/tty.zig");
 pub const Driver = enum(usize) {
     limine,
     tty,
+    fat16,
 };
 
 /// Basic file handle which contains metadata required for the corresponding filesystem
@@ -32,7 +36,18 @@ pub const Driver = enum(usize) {
 pub const File = union(Driver) {
     limine: lmfs.File,
     tty: void,
+    fat16: fat16.File,
 };
+
+pub const DirEntry = extern struct {
+    name: [256:0]u8,
+};
+
+var FAT16_DRIVER: fat16.Driver(gpt.PartitionBlockDevice(ata.BlockDevice)) = .{};
+
+pub fn init(fat16_block_device: gpt.PartitionBlockDevice(ata.BlockDevice)) !void {
+    try FAT16_DRIVER.init(fat16_block_device, @import("heap.zig").allocator());
+}
 
 pub fn open(path: []const u8) ?File {
     if (std.mem.eql(u8, path, "/dev/tty")) {
@@ -47,13 +62,18 @@ pub fn open(path: []const u8) ?File {
         }
     }
 
-    return null;
+    if (FAT16_DRIVER.open(path)) |file| {
+        return .{ .fat16 = file };
+    } else |_| {
+        return null;
+    }
 }
 
 pub fn read(file: File, dst: []u8) u64 {
     return switch (file) {
         .tty => |_| tty.read(dst),
         .limine => |_| unreachable,
+        .fat16 => |_| unreachable,
     };
 }
 
@@ -61,5 +81,14 @@ pub fn write(file: File, src: []const u8) u64 {
     return switch (file) {
         .tty => |_| tty.write(src),
         .limine => |_| unreachable,
+        .fat16 => |_| unreachable,
+    };
+}
+
+pub fn getdirents(file: File, entries: []DirEntry) !usize {
+    return switch (file) {
+        .tty => |_| unreachable,
+        .limine => |_| unreachable,
+        .fat16 => |f| FAT16_DRIVER.getdirents(f, entries),
     };
 }

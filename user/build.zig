@@ -47,4 +47,16 @@ pub fn build(b: *std.Build) void {
     });
     sh_elf.setLinkerScript(.{ .src_path = .{ .owner = b, .sub_path = "user.ld" } });
     b.installArtifact(sh_elf);
+
+    const ls_elf = b.addExecutable(.{
+        .name = "ls",
+        .root_source_file = b.path("src/ls.zig"),
+        .target = target,
+        .optimize = .ReleaseSmall,
+        .code_model = .small,
+        .link_libc = false,
+        .omit_frame_pointer = false,
+    });
+    ls_elf.setLinkerScript(.{ .src_path = .{ .owner = b, .sub_path = "user.ld" } });
+    b.installArtifact(ls_elf);
 }

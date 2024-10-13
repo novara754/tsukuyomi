@@ -10,6 +10,7 @@ const SYS_READ = 0;
 const SYS_WRITE = 1;
 const SYS_OPEN = 2;
 const SYS_CLOSE = 3;
+const SYS_GETDIRENTS = 4;
 const SYS_FORK = 57;
 const SYS_EXECVE = 59;
 const SYS_EXIT = 60;
@@ -83,6 +84,10 @@ pub fn close(fd: c_int) c_int {
     return @intCast(syscall1(SYS_CLOSE, @intCast(fd)));
 }
 
+pub fn getdirents(fd: c_int, buf: [*]DirEntry, count: usize) usize {
+    return @intCast(syscall3(SYS_GETDIRENTS, @intCast(fd), @intFromPtr(buf), @intCast(count)));
+}
+
 pub fn wait() u64 {
     return @intCast(syscall0(SYS_WAIT));
 }
@@ -99,3 +104,7 @@ pub fn _exit(status: c_int) noreturn {
     _ = syscall1(SYS_EXIT, @intCast(status));
     unreachable;
 }
+
+pub const DirEntry = extern struct {
+    name: [256:0]u8,
+};

@@ -16,7 +16,7 @@ SECTIONS
         *(.data .data.*)
     } :data
 
-    .bss : {
+    .bss : ALIGN(CONSTANT(MAXPAGESIZE)) {
         *(.bss .bss.*)
         *(COMMON)
     } :data

@@ -21,8 +21,10 @@ const ps2 = lib.ps2;
 const kbd = lib.kbd;
 const logger = lib.logger;
 const ata = lib.ata;
-const gpt = lib.gpt;
-const fat16 = lib.fat16;
+const fs = lib.fs;
+
+const fat16 = fs.fat16;
+const gpt = fs.gpt;
 
 export fn _start() noreturn {
     // logger.configure(.{ .maxLevel = .info, .dimInfo = false });
@@ -158,41 +160,9 @@ export fn _start() noreturn {
         .layout = partitions.items[0],
     };
 
-    {
-        const ebpb = fat16.readEBPB(part, heap.allocator()) catch |e| {
-            ppanic("failed to read ebpb: {}", .{e});
-        };
-        defer heap.allocator().destroy(ebpb);
-
-        const fat = fat16.readFAT(ebpb, part, heap.allocator()) catch |e| {
-            ppanic("failed to read fat: {}", .{e});
-        };
-        defer heap.allocator().free(fat);
-
-        const root_dir = fat16.readRootDir(ebpb, part, heap.allocator()) catch |e| {
-            ppanic("failed to read root_dir: {}", .{e});
-        };
-        defer heap.allocator().free(root_dir);
-        for (root_dir[0..10], 0..) |entry, i| {
-            if (entry.valid() and entry.attributes != fat16.DirEntryAttribute.vfat) {
-                if (entry.extension().len > 0) {
-                    logger.log(.debug, "main", "{}. {s}.{s}", .{ i, entry.filename(), entry.extension() });
-                } else {
-                    logger.log(.debug, "main", "{}. {s}", .{ i, entry.filename() });
-                }
-            }
-        }
-
-        const dir_entry = fat16.findFile("/EFI/BOOT/BOOTX64.EFI", ebpb, part, heap.allocator()) catch |e| {
-            ppanic("failed to find file: {}", .{e});
-        };
-        logger.log(.debug, "main", "entry = {}", .{dir_entry});
-        if (dir_entry.extension().len > 0) {
-            logger.log(.debug, "main", "{s}.{s}", .{ dir_entry.filename(), dir_entry.extension() });
-        } else {
-            logger.log(.debug, "main", "{s}", .{dir_entry.filename()});
-        }
-    }
+    @import("vfs.zig").init(part) catch |e| {
+        ppanic("failed to init vfs: {}", .{e});
+    };
 
     logger.log(.info, "proc", "entering scheduler...", .{});
     process.scheduler();
