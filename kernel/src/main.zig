@@ -207,8 +207,9 @@ fn procFromFile(file: *const limine.File, name: []const u8) !void {
 
     const ehdr: *const elf.Ehdr = @ptrCast(file.address);
 
-    const proc_pml4 = mem.createPML4();
-    mem.setPML4(mem.v2p(proc_pml4));
+    var proc = try process.allocProcess(name);
+
+    mem.setPML4(proc.pml4);
     var proc_mapper = mem.Mapper.forCurrentPML4();
     const phdrs: [*]const elf.Elf64_Phdr = @alignCast(@ptrCast(&file.address[ehdr.e_phoff]));
     for (phdrs, 0..ehdr.e_phnum) |phdr, _| {
@@ -231,7 +232,6 @@ fn procFromFile(file: *const limine.File, name: []const u8) !void {
     proc_mapper.map(process.USER_STACK_BOTTOM, proc_stack_phys, .user, .panic);
     mem.restoreKernelPML4();
 
-    var proc = try process.allocProcess(name);
     var tf = proc.trap_frame;
     tf.cs = gdt.SEG_USER_CODE << 3 | 0b11;
     tf.ds = gdt.SEG_USER_DATA << 3 | 0b11;
@@ -241,5 +241,4 @@ fn procFromFile(file: *const limine.File, name: []const u8) !void {
     tf.rsp = process.USER_STACK_BOTTOM + mem.PAGE_SIZE;
     tf.rip = ehdr.e_entry;
     proc.state = process.ProcessState.runnable;
-    proc.pml4 = mem.v2p(proc_pml4);
 }

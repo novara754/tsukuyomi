@@ -11,7 +11,11 @@ const panic = @import("panic.zig").panic;
 
 /// Virtual address of bottom of user stack.
 /// User-space stacks are currently limited to 1 page.
-pub const USER_STACK_BOTTOM = 0x0000_7000_0000_0000;
+pub const USER_STACK_BOTTOM = 0x0000_6000_0000_0000;
+
+pub const KERNEL_STACK_PAGE_COUNT = 4;
+pub const KERNEL_STACK_BOTTOM = 0x0000_6100_0000_0000;
+pub const KERNEL_STACK_TOP = KERNEL_STACK_BOTTOM + (KERNEL_STACK_PAGE_COUNT) * mem.PAGE_SIZE;
 
 /// Maximum number of processes that can be allocated at the same time.
 const MAX_NUM_PROCESSES = 16;
@@ -51,11 +55,9 @@ const Process = struct {
     parent: ?*Process,
     /// Physical address of top-level paging table
     pml4: usize,
-    /// Virtual address of bottom of interrupt stack
-    kernel_stack: [*]u8,
-    /// Trap frame which resides in kernel_stack
+    /// Trap frame which resides in kernel stack
     trap_frame: *TrapFrame,
-    /// Saved necessary CPU state which resides in kernel_stack (for context switching)
+    /// Saved necessary CPU state which resides in kernel stack (for context switching)
     context: *Context,
     /// Status code passed to exit syscall
     exit_status: u64,
@@ -95,7 +97,6 @@ pub var PROCESSES: [MAX_NUM_PROCESSES]Process = [1]Process{Process{
     .pid = undefined,
     .parent = undefined,
     .pml4 = undefined,
-    .kernel_stack = undefined,
     .trap_frame = undefined,
     .context = undefined,
     .exit_status = undefined,
@@ -134,10 +135,19 @@ pub fn allocProcess(name: []const u8) !*Process {
     proc.name = name;
     proc.pid = @atomicRmw(u64, &NEXT_PID, .Add, 1, .seq_cst);
     proc.parent = null;
-    proc.kernel_stack = @ptrCast(mem.PAGE_ALLOCATOR.alloc());
 
-    var sp: usize = @intFromPtr(proc.kernel_stack);
-    sp += mem.PAGE_SIZE;
+    const proc_pml4 = mem.createPML4();
+    proc.pml4 = mem.v2p(proc_pml4);
+    var proc_mapper = mem.Mapper.forPML4(proc_pml4);
+    var kernel_stack_top_page: u64 = undefined;
+    for (0..KERNEL_STACK_PAGE_COUNT) |i| {
+        const virt = mem.PAGE_ALLOCATOR.alloc();
+        if (i == 0) kernel_stack_top_page = @intFromPtr(virt);
+        const phys = mem.v2p(virt);
+        proc_mapper.map(KERNEL_STACK_TOP - (1 + i) * mem.PAGE_SIZE, phys, .kernel, .panic);
+    }
+
+    var sp: usize = kernel_stack_top_page + mem.PAGE_SIZE;
 
     sp -= @sizeOf(TrapFrame);
     proc.trap_frame = @ptrFromInt(sp);
@@ -177,7 +187,7 @@ pub fn scheduler() noreturn {
 
             proc.state = ProcessState.running;
             CPU_STATE.process = proc;
-            CPU_STATE.tss.rsp0 = @intFromPtr(proc.kernel_stack) + mem.PAGE_SIZE;
+            CPU_STATE.tss.rsp0 = KERNEL_STACK_TOP;
             gdt.loadGDTWithTSS(&CPU_STATE.gdt, &CPU_STATE.tss);
             mem.setPML4(proc.pml4);
             switchContext(&CPU_STATE.scheduler_context, proc.context);
@@ -213,7 +223,7 @@ pub fn doFork() !u64 {
     var new_proc = try allocProcess(this_proc.name);
 
     const this_pml4: *mem.PageTable = @alignCast(@ptrCast(mem.p2v(this_proc.pml4)));
-    const new_pml4: *mem.PageTable = @ptrCast(mem.PAGE_ALLOCATOR.allocZeroed());
+    const new_pml4: *mem.PageTable = @alignCast(@ptrCast(mem.p2v(new_proc.pml4)));
 
     var new_mapper = mem.Mapper.forPML4(new_pml4);
 
@@ -260,6 +270,8 @@ pub fn doFork() !u64 {
                     const this_page: *[mem.PAGE_SIZE]u8 = @alignCast(@ptrCast(mem.p2v(pt_entry.frame())));
 
                     const virt = (pml4_idx << 39) | (pdpt_idx << 30) | (pd_idx << 21) | (pt_idx << 12);
+
+                    if (virt >= KERNEL_STACK_BOTTOM) continue;
 
                     const new_page: *[mem.PAGE_SIZE]u8 = @ptrCast(mem.PAGE_ALLOCATOR.alloc());
                     const new_page_phys = mem.v2p(new_page);
