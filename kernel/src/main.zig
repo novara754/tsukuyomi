@@ -91,7 +91,6 @@ export fn _start() noreturn {
     }
 
     if (lmfs.open("//usr/sh")) |file| {
-        logger.log(.debug, "proc", "making proc for //usr/sh...", .{});
         procFromFile(file.ref, "sh") catch |e| {
             ppanic("procFromFile: {}", .{e});
         };
@@ -100,7 +99,7 @@ export fn _start() noreturn {
     }
 
     uart.UART1.enableInterrupts();
-    logger.log(.debug, "uart", "interrupts enabled for uart1", .{});
+    logger.log(.info, "uart", "interrupts enabled for uart1", .{});
 
     free_pages = mem.PAGE_ALLOCATOR.countFree();
     logger.log(.debug, "mem", "number of usable physical pages: {} ({} bytes)", .{ free_pages, free_pages * mem.PAGE_SIZE });

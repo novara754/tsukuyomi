@@ -26,15 +26,7 @@ pub fn Driver(comptime BlockDevice: type) type {
         }
 
         pub fn open(self: *Self, path: []const u8) !File {
-            @import("../logger.zig").log(.debug, "vfs.fat16", "open(path=\"{s}\")", .{path});
-            const sp = asm volatile ("mov %rsp, %rax"
-                : [ret] "={rax}" (-> u64),
-                :
-                : "{rax}"
-            );
-            @import("../logger.zig").log(.debug, "vfs.fat16", "1, sp={x}", .{sp});
             const direntry = try fat16.findFile(path, self.ebpb, self.fat, self.block_device, self.allocator);
-            @import("../logger.zig").log(.debug, "vfs.fat16", "found {}", .{direntry});
             return .{
                 .first_cluster = direntry.cluster_lo,
                 .offset = 0,

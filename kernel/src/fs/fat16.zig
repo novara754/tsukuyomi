@@ -239,43 +239,25 @@ pub fn readFAT(ebpb: *const EBPB, block_device: anytype, allocator: std.mem.Allo
 }
 
 pub fn readRootDir(ebpb: *const EBPB, block_device: anytype, allocator: std.mem.Allocator) ![]DirEntry {
-    var sp = asm volatile ("mov %rsp, %rax"
-        : [ret] "={rax}" (-> u64),
-        :
-        : "{rax}"
-    );
-    @import("../logger.zig").log(.debug, "fat16", "1, sp={x}", .{sp});
-
     if (ebpb.bpb.bytes_per_sector != block_device.getBlockSize()) {
-        panic("fat16.readFAT: block size mismatch", .{});
+        panic("fat16.readRootDir: block size mismatch", .{});
     }
-
-    sp = asm volatile ("mov %rsp, %rax"
-        : [ret] "={rax}" (-> u64),
-        :
-        : "{rax}"
-    );
-    @import("../logger.zig").log(.debug, "fat16", "1, sp={x}", .{sp});
-
-    @import("../logger.zig").log(.debug, "fat16", "#1", .{});
 
     const root_dir_size = ebpb.bpb.root_dir_entry_count * @sizeOf(DirEntry);
     const buf = try allocator.alignedAlloc(u8, @alignOf(DirEntry), root_dir_size);
     errdefer allocator.free(buf);
 
-    @import("../logger.zig").log(.debug, "fat16", "#2", .{});
     try block_device.readBlocks(
         ebpb.bpb.startOfRootDir(),
         @intCast(root_dir_size / ebpb.bpb.bytes_per_sector),
         buf,
     );
-    @import("../logger.zig").log(.debug, "fat16", "#3", .{});
     return std.mem.bytesAsSlice(DirEntry, buf);
 }
 
 pub fn readCluster(idx: u16, ebpb: *const EBPB, block_device: anytype, allocator: std.mem.Allocator) ![]align(@alignOf(DirEntry)) u8 {
     if (ebpb.bpb.bytes_per_sector != block_device.getBlockSize()) {
-        panic("fat16.readFAT: block size mismatch", .{});
+        panic("fat16.readCluster: block size mismatch", .{});
     }
 
     const buf = try allocator.alignedAlloc(u8, @alignOf(DirEntry), ebpb.bpb.bytes_per_sector * ebpb.bpb.sectors_per_cluster);
@@ -297,22 +279,12 @@ pub fn findFile(path: []const u8, ebpb: *const EBPB, fat: FAT, block_device: any
 
     var segments = std.mem.splitScalar(u8, pathCleaned, '/');
 
-    const sp = asm volatile ("mov %rsp, %rax"
-        : [ret] "={rax}" (-> u64),
-        :
-        : "{rax}"
-    );
-    @import("../logger.zig").log(.debug, "fat16", "1, sp={x}", .{sp});
-
     const root_dir = try readRootDir(ebpb, block_device, allocator);
-    @import("../logger.zig").log(.debug, "fat16", "2", .{});
     defer allocator.free(fat);
 
     const first_segment = segments.next() orelse return error.EmptyPath;
 
     var dir_entry: DirEntry = try findEntry(root_dir, first_segment);
-
-    @import("../logger.zig").log(.debug, "fat16", "3", .{});
 
     while (segments.next()) |segment| {
         if (!dir_entry.isDir()) return error.NotADirectory;

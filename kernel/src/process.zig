@@ -324,7 +324,6 @@ pub fn doExit(status: u64) noreturn {
     if (proc.parent) |parent| {
         awakenWithLock(@intFromPtr(parent));
     }
-    @import("uart.zig").print("process {s} exited with status {}\n", .{ proc.name, status });
     switchContext(&proc.context, CPU_STATE.scheduler_context);
     panic("switchContext returned to doExit", .{});
 }

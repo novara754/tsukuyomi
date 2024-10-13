@@ -28,15 +28,6 @@ pub fn doSyscall(tf: *TrapFrame) void {
         panic("doSyscall called without process", .{});
     };
 
-    logger.log(.debug, "syscall", "pid={}, nr={}, rdi={x}, rsi={x}, rdx={x}", .{ proc.pid, tf.rax, tf.rdi, tf.rsi, tf.rdx });
-
-    const sp = asm volatile ("mov %rsp, %rax"
-        : [ret] "={rax}" (-> u64),
-        :
-        : "{rax}"
-    );
-    @import("../logger.zig").log(.debug, "syscall", "pid={}, sp={x}", .{ proc.pid, sp });
-
     swtch: {
         switch (tf.rax) {
             SYS_READ => {
@@ -99,25 +90,19 @@ pub fn doSyscall(tf: *TrapFrame) void {
                 const buf: [*]vfs.DirEntry = @ptrFromInt(tf.rsi);
                 const count = tf.rdx;
 
-                @import("../logger.zig").log(.debug, "syscall", "1", .{});
-
                 if (!isUserPointer(buf)) {
                     tf.rax = ~@as(u64, 0);
                     break :swtch;
                 }
 
-                @import("../logger.zig").log(.debug, "syscall", "2", .{});
                 const file = proc.files[fd] orelse {
                     tf.rax = ~@as(u64, 0);
                     break :swtch;
                 };
 
-                @import("../logger.zig").log(.debug, "syscall", "3", .{});
                 const entries_buf = buf[0..count];
 
-                @import("../logger.zig").log(.debug, "syscall", "4", .{});
                 tf.rax = vfs.getdirents(file, entries_buf) catch {
-                    @import("../logger.zig").log(.debug, "syscall", "ERR", .{});
                     tf.rax = ~@as(u64, 0);
                     break :swtch;
                 };
@@ -145,8 +130,6 @@ pub fn doSyscall(tf: *TrapFrame) void {
             else => panic("syscall unimplemented: nr={}", .{tf.rax}),
         }
     }
-
-    logger.log(.debug, "syscall", "returning {x}", .{tf.rax});
 }
 
 fn isUserPointer(ptr: *const anyopaque) bool {
