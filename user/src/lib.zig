@@ -11,6 +11,7 @@ const SYS_WRITE = 1;
 const SYS_OPEN = 2;
 const SYS_CLOSE = 3;
 const SYS_GETDIRENTS = 4;
+const SYS_SETCWD = 56;
 const SYS_FORK = 57;
 const SYS_EXECVE = 59;
 const SYS_EXIT = 60;
@@ -92,14 +93,17 @@ pub fn wait() u64 {
     return @intCast(syscall0(SYS_WAIT));
 }
 
-pub fn execve(pathname: [*:0]u8, argv: [*:null]const ?[*:0]const u8, envp: [*:null]const ?[*:0]const u8) c_int {
-    return @intCast(syscall3(SYS_EXECVE, @intFromPtr(pathname), @intFromPtr(argv), @intFromPtr(envp)));
+pub fn setcwd(path: [*:0]const u8) c_int {
+    return @intCast(syscall1(SYS_SETCWD, @intFromPtr(path)));
 }
 
 pub fn fork() pid_t {
     return @intCast(syscall0(SYS_FORK));
 }
 
+pub fn execve(pathname: [*:0]u8, argv: [*:null]const ?[*:0]const u8, envp: [*:null]const ?[*:0]const u8) c_int {
+    return @intCast(syscall3(SYS_EXECVE, @intFromPtr(pathname), @intFromPtr(argv), @intFromPtr(envp)));
+}
 pub fn _exit(status: c_int) noreturn {
     _ = syscall1(SYS_EXIT, @intCast(status));
     unreachable;

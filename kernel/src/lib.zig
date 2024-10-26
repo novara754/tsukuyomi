@@ -19,9 +19,11 @@ pub const kbd = @import("kbd.zig");
 pub const logger = @import("logger.zig");
 pub const ata = @import("ata.zig");
 pub const fs = @import("fs.zig");
+pub const path = @import("vfs/path.zig");
 
 test {
     _ = acpi;
     _ = fs.gpt;
     _ = fs.fat16;
+    _ = path;
 }

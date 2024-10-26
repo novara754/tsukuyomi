@@ -47,9 +47,13 @@ export fn _start() noreturn {
             continue;
         }
 
-        _ = lib.write(tty, ">> ", 3);
-        _ = lib.write(tty, &line, line_len);
-        _ = lib.write(tty, "\n", 1);
+        if (std.mem.startsWith(u8, line[0..line_len], "cd ")) {
+            const path = line[3..];
+            if (lib.setcwd(path) < 0) {
+                _ = lib.write(lib.STDOUT_FILENO, "cd failed\n", 10);
+            }
+            continue;
+        }
 
         const pid = lib.fork();
         if (pid < 0) {

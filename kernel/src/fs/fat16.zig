@@ -13,6 +13,7 @@
 
 const std = @import("std");
 const panic = @import("../panic.zig").panic;
+const path = @import("../vfs/path.zig");
 
 /// The BIOS Parameter Block is stored in the first sector (bootsector)
 /// of a drive/partition and contain generated metadata about the drive and
@@ -267,17 +268,17 @@ pub fn readCluster(idx: u16, ebpb: *const EBPB, block_device: anytype, allocator
     return buf;
 }
 
-pub fn findFile(path: []const u8, ebpb: *const EBPB, fat: FAT, block_device: anytype, allocator: std.mem.Allocator) !DirEntry {
-    if (path[0] != '/') {
+pub fn findFile(filename: []const u8, ebpb: *const EBPB, fat: FAT, block_device: anytype, allocator: std.mem.Allocator) !DirEntry {
+    if (!path.isAbsolute(filename)) {
         return error.PathNotAbsolute;
     }
 
-    var pathCleaned = path[1..];
-    if (pathCleaned[pathCleaned.len - 1] == '/') {
-        pathCleaned = pathCleaned[0 .. pathCleaned.len - 1];
+    var filename_cleaned = filename[1..];
+    if (filename_cleaned[filename_cleaned.len - 1] == path.SEPARATOR) {
+        filename_cleaned = filename_cleaned[0 .. filename_cleaned.len - 1];
     }
 
-    var segments = std.mem.splitScalar(u8, pathCleaned, '/');
+    var segments = std.mem.splitScalar(u8, filename_cleaned, path.SEPARATOR);
 
     const root_dir = try readRootDir(ebpb, block_device, allocator);
     defer allocator.free(fat);

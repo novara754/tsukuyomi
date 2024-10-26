@@ -177,6 +177,8 @@ fn procFromFile(file: *const limine.File, name: []const u8) !void {
     const ehdr: *const elf.Ehdr = @ptrCast(file.address);
 
     var proc = try process.allocProcess(name);
+    proc.cwd[0] = '/';
+    proc.cwd[1] = 0;
 
     mem.setPML4(proc.pml4);
     var proc_mapper = mem.Mapper.forCurrentPML4();

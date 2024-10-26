@@ -7,6 +7,7 @@ const mem = @import("mem.zig");
 const gdt = @import("gdt.zig");
 const vfs = @import("vfs.zig");
 const x86 = @import("x86.zig");
+const MAX_PATH_LEN = @import("vfs/path.zig").MAX_PATH_LEN;
 const panic = @import("panic.zig").panic;
 
 /// Virtual address of bottom of user stack.
@@ -71,6 +72,13 @@ const Process = struct {
     /// The values used are typically the addresses of data structures the process tried to access
     /// or similar.
     wait_channel: u64,
+    /// Current working directory. Relative paths are relative to this directory.
+    cwd: [MAX_PATH_LEN:0]u8,
+
+    pub fn getCWD(self: *const @This()) []const u8 {
+        const cwd_len = std.mem.indexOfScalar(u8, &self.cwd, 0) orelse MAX_PATH_LEN;
+        return self.cwd[0..cwd_len];
+    }
 };
 
 /// General CPU state.
@@ -102,6 +110,7 @@ pub var PROCESSES: [MAX_NUM_PROCESSES]Process = [1]Process{Process{
     .exit_status = undefined,
     .files = undefined,
     .wait_channel = undefined,
+    .cwd = undefined,
 }} ** MAX_NUM_PROCESSES;
 /// CPU state.
 pub var CPU_STATE = CPU{};
@@ -288,6 +297,7 @@ pub fn doFork() !u64 {
     new_mapper.map(USER_STACK_BOTTOM, new_stack_phys, .user, .overwrite);
 
     new_proc.parent = this_proc;
+    new_proc.cwd = this_proc.cwd;
     new_proc.pml4 = mem.v2p(new_pml4);
     new_proc.trap_frame.* = this_proc.trap_frame.*;
     // set rax to 0 as the return value of fork for the child
@@ -324,6 +334,7 @@ pub fn doExit(status: u64) noreturn {
     if (proc.parent) |parent| {
         awakenWithLock(@intFromPtr(parent));
     }
+    @import("logger.zig").log(.debug, "process", "process {s} exited with status code {}", .{ proc.name, proc.exit_status });
     switchContext(&proc.context, CPU_STATE.scheduler_context);
     panic("switchContext returned to doExit", .{});
 }

@@ -20,6 +20,7 @@ const tty = @import("vfs/tty.zig");
 const fat16 = @import("vfs/fat16.zig");
 const gpt = @import("fs/gpt.zig");
 const ata = @import("ata.zig");
+const MAX_PATH_LEN = @import("vfs/path.zig").MAX_PATH_LEN;
 
 /// Enumeration of available filesystem drivers.
 /// This is used as the discriminant for the `File` type which is a union
@@ -40,7 +41,7 @@ pub const File = union(Driver) {
 };
 
 pub const DirEntry = extern struct {
-    name: [256:0]u8,
+    name: [MAX_PATH_LEN:0]u8,
 };
 
 var FAT16_DRIVER: fat16.Driver(gpt.PartitionBlockDevice(ata.BlockDevice)) = .{};
@@ -69,26 +70,26 @@ pub fn open(path: []const u8) ?File {
     }
 }
 
-pub fn read(file: File, dst: []u8) u64 {
-    return switch (file) {
+pub fn read(file: *File, dst: []u8) u64 {
+    return switch (file.*) {
         .tty => |_| tty.read(dst),
         .limine => |_| unreachable,
         .fat16 => |_| unreachable,
     };
 }
 
-pub fn write(file: File, src: []const u8) u64 {
-    return switch (file) {
+pub fn write(file: *File, src: []const u8) u64 {
+    return switch (file.*) {
         .tty => |_| tty.write(src),
         .limine => |_| unreachable,
         .fat16 => |_| unreachable,
     };
 }
 
-pub fn getdirents(file: File, entries: []DirEntry) !usize {
-    return switch (file) {
+pub fn getdirents(file: *File, entries: []DirEntry) !usize {
+    return switch (file.*) {
         .tty => |_| unreachable,
         .limine => |_| unreachable,
-        .fat16 => |f| FAT16_DRIVER.getdirents(f, entries),
+        .fat16 => |*f| FAT16_DRIVER.getdirents(f, entries),
     };
 }

@@ -4,9 +4,9 @@ const lib = @import("lib.zig");
 var entries: [64]lib.DirEntry = undefined;
 
 export fn _start() noreturn {
-    const dir = lib.open("/BOOT", lib.O_RDONLY);
+    const dir = lib.open(".", lib.O_RDONLY);
     if (dir < 0) {
-        @panic("failed to open /BOOT");
+        @panic("failed to open directory");
     }
 
     var count = entries.len;
